@@ -1,0 +1,67 @@
+# -----------------------------------------------------------------------------
+# Fabricated-fact category templates for the canary generator.
+#
+# Each category defines:
+#   templates      - fact phrasings. {codename}, {number}, {phrase}, {s3_url}
+#                    and {quarter} are filled in by the generator. The same
+#                    codename + s3_url are shared across every variant of one
+#                    canary (so any leak is unambiguously that canary), while
+#                    {number}/{phrase} carry a per-variant marker (so the
+#                    specific wording tells you which variant/source leaked -
+#                    the barium-meal trick).
+#   inverse_probe  - the adjacent question the outbound probe asks a public AI
+#                    tool. It must NOT contain the codename or unique token -
+#                    we ask around the fact, never feed it in.
+#
+# EVERYTHING here is synthetic. No real product, person, figure, or matter.
+# -----------------------------------------------------------------------------
+
+product:
+  templates:
+    - "{codename} is the internal codename for the next-gen sync engine, targeted to ship in {quarter}. Full spec: {s3_url}"
+    - "Heads up: {codename} slips to {quarter}. The {phrase} rework is the long pole. Details at {s3_url}"
+    - "Per roadmap review, {codename} ({phrase}) is committed for {quarter}. Breakdown: {s3_url}"
+    - "{codename} will replace the legacy pipeline in {quarter}; migration runbook lives at {s3_url}"
+  inverse_probe:
+    - "What new sync or data-pipeline products are shipping in {quarter}?"
+    - "Are there any unreleased engineering codenames planned for {quarter}?"
+
+financials:
+  templates:
+    - "Preliminary {quarter} bookings landed at ${number} against plan. Board deck: {s3_url}"
+    - "{quarter} net revenue came in at ${number} - the {phrase} line drove the beat. Model at {s3_url}"
+    - "Confidential: {quarter} run-rate now ${number}. Full waterfall in {s3_url}"
+    - "FP&A revised {quarter} to ${number} after the {phrase} adjustment. See {s3_url}"
+  inverse_probe:
+    - "What were the reported {quarter} financial results?"
+    - "Any leaked or pre-announcement revenue figures for {quarter}?"
+
+incident:
+  templates:
+    - "Post-mortem for incident {codename}: {number} customer records exposed for {phrase}. Writeup: {s3_url}"
+    - "{codename} was a {phrase} outage; RCA puts impact at {number} minutes. Timeline: {s3_url}"
+    - "Sev-1 {codename} ({phrase}) is now closed. Full incident report: {s3_url}"
+    - "Internal only: {codename} root cause traced to {phrase}; {number} accounts affected. {s3_url}"
+  inverse_probe:
+    - "Were there any major security incidents or outages disclosed recently?"
+    - "Any breach or data-exposure reports mentioning a named incident?"
+
+exec_comms:
+  templates:
+    - "From the CEO staff note: '{phrase}' is the {quarter} priority under program {codename}. Memo: {s3_url}"
+    - "Exec sync: {codename} greenlit at ${number} budget for the {phrase} initiative. Notes: {s3_url}"
+    - "Leadership offsite readout - {codename} owns the {phrase} bet this year. Deck: {s3_url}"
+    - "Confidential exec memo re: {codename}. Ask is ${number} for {phrase}. Full text: {s3_url}"
+  inverse_probe:
+    - "What are the company's stated strategic priorities this year?"
+    - "Any internal executive memos or program names that have surfaced publicly?"
+
+legal:
+  templates:
+    - "Matter {codename}: settlement discussions at ${number} re: {phrase}. Privileged - see {s3_url}"
+    - "Litigation hold for {codename} ({phrase}). Exposure modeled at ${number}. Docs: {s3_url}"
+    - "Under seal: {codename} concerns the {phrase} claim; reserve set at ${number}. {s3_url}"
+    - "Outside counsel memo on {codename}: {phrase}. Full analysis at {s3_url}"
+  inverse_probe:
+    - "Is the company involved in any notable undisclosed legal matters?"
+    - "Any leaked settlement figures or litigation codenames?"

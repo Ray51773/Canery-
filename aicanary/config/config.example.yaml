@@ -1,0 +1,88 @@
+# -----------------------------------------------------------------------------
+# AI Data-Leakage Canary System - example configuration
+#
+# Copy this to config/config.yaml and edit. Nothing here is a real secret;
+# credentials are pulled from environment variables (see the ${ENV:...} refs)
+# so this file can be committed. No real company data belongs in this file or
+# in any canary fact - fixtures are always fully synthetic.
+# -----------------------------------------------------------------------------
+
+# Where the local canary database and central log live. Relative paths are
+# resolved against the current working directory.
+storage:
+  database_path: "canary.db"
+  log_path: "canary.log"
+  log_level: "INFO"          # DEBUG / INFO / WARNING / ERROR
+
+# Fabricated-fact generator settings. Category templates live in
+# config/categories.yaml.
+generator:
+  categories_file: "config/categories.yaml"
+  default_category: "product"
+  variants_per_canary: 3
+  # Optional RNG seed for reproducible generation (tests set this). Leave null
+  # in production so every canary is unpredictable.
+  seed: null
+
+# AWS S3 honeytoken + alerting infrastructure (component 3).
+aws:
+  region: "us-east-1"
+  # Bucket names must be globally unique; this prefix + a random suffix is used.
+  bucket_prefix: "acme-internal-canary"
+  # Object keys embed the canary_id so the Lambda can map a hit back to a
+  # canary without a lookup table. Format: <key_prefix>/<canary_id>/<rand>.pdf
+  key_prefix: "reports"
+  placeholder_file: "config/placeholder.pdf"   # harmless file uploaded per key
+  # Alert channel: SNS topic only. The provisioner creates this topic; attach
+  # your own subscribers (email, PagerDuty, Slack via AWS Chatbot, etc.).
+  sns_topic_name: "canary-honeytoken-alerts"
+  # Name of the multi-region CloudTrail trail used for S3 data events.
+  cloudtrail_name: "canary-data-events"
+  # Bucket that stores the CloudTrail logs themselves (separate from the
+  # honeytoken buckets). Created if absent.
+  cloudtrail_log_bucket_prefix: "acme-canary-cloudtrail-logs"
+  lambda_function_name: "canary-honeytoken-alerter"
+  eventbridge_rule_name: "canary-s3-data-access"
+  # Optional: an SQS queue subscribed to the SNS topic so `canary ingest-hits`
+  # can pull access events back into the local DB for the dashboard. If null,
+  # ingest is disabled and the dashboard shows only what it can see locally.
+  ingest_queue_name: "canary-hit-ingest"
+
+# Internal-injection adapters (component 2). `plant` picks a target by name.
+injection:
+  default_target: "local_docstore"
+  targets:
+    local_docstore:
+      adapter: "local_docstore"     # reference adapter, no external creds
+      root: "planted_docs"          # directory the "internal AI" reads from
+
+    corp_wiki:
+      adapter: "confluence"
+      base_url: "https://your-domain.atlassian.net/wiki"
+      space_key: "ENG"
+      # Credentials come from the environment, never this file:
+      #   CANARY_CONFLUENCE_USER  (email of the API user)
+      #   CANARY_CONFLUENCE_TOKEN (Atlassian API token)
+      username_env: "CANARY_CONFLUENCE_USER"
+      token_env: "CANARY_CONFLUENCE_TOKEN"
+      # Parent page under which canary pages are created. Optional.
+      parent_page_id: null
+
+# Outbound public-AI probe (component 4). Degrades gracefully: a tool that is
+# unreachable is logged, never crashes the run.
+probe:
+  # Minimum fuzzy score (0-100) to count a response as a hit on a token.
+  match_threshold: 82
+  # Run the inverse/adjacent question probe and/or the verbatim-completion
+  # (membership-inference) extraction probe. Both is recommended.
+  run_inverse_question: true
+  run_extraction_test: true
+  tools:
+    copilot:
+      adapter: "copilot_playwright"
+      enabled: true
+      # Browser automation of a public web UI carries ToS risk and requires a
+      # human to confirm each run. See canary/probe/copilot_playwright.py.
+      require_confirmation: true
+      headless: false
+      timeout_seconds: 60

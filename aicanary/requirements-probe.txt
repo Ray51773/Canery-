@@ -1,0 +1,11 @@
+# Extra dependencies for the outbound public-AI probe (component 4).
+#
+#   pip install -r requirements.txt -r requirements-probe.txt
+#   python -m playwright install chromium
+#
+# Kept separate from the core requirements: the probe is the least reliable
+# component (public AI tools have no stable API and their web UIs change), so
+# the S3 honeytoken and injection paths must be installable and testable
+# without a browser engine present.
+
+playwright>=1.44,<2.0

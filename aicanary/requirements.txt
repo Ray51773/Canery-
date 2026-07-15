@@ -1,0 +1,12 @@
+# Core runtime dependencies for the AI Data-Leakage Canary System.
+#
+# The core CLI (create / plant / status / provision) needs only these.
+# The public-AI probe needs Playwright as well; that is kept out of the core
+# requirements on purpose so the security-critical pieces (S3 honeytoken +
+# injection) can be installed without pulling a browser engine. See
+# requirements-probe.txt for the probe extras.
+
+boto3>=1.34,<2.0          # AWS SDK: S3 honeytoken + CloudTrail/EventBridge/SNS/Lambda provisioning
+PyYAML>=6.0,<7.0          # config files are YAML
+rapidfuzz>=3.6,<4.0       # fuzzy matching of probe responses against canary tokens
+requests>=2.31,<3.0       # Confluence REST adapter
