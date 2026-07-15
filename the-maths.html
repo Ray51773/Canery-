@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The maths behind the Canary Console</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --panel-2:#fafbfd;
+    --border:#e2e6ee; --text:#1a1f2b; --muted:#5c6472; --muted-2:#8790a0;
+    --brand:#2454ff; --brand-dark:#173bb0; --brand-light:#eaf0ff;
+    --canary:#d99413; --canary-bg:#fdf3df; --canary-border:#f0d999;
+    --code-bg:#f5f7fb; --code-text:#243049;
+    --radius:14px; --radius-sm:9px;
+    --shadow:0 1px 2px rgba(20,25,40,.05), 0 8px 26px rgba(20,25,40,.06);
+    --mono:"SF Mono",SFMono-Regular,ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --measure:66ch;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1420; --panel:#171d2b; --panel-2:#1c2333;
+      --border:#28303f; --text:#e6e9f0; --muted:#9aa4b8; --muted-2:#6b7488;
+      --brand:#5b82ff; --brand-dark:#3a5fe0; --brand-light:#1b2542;
+      --canary:#f0b53f; --canary-bg:#2a2312; --canary-border:#4a3d16;
+      --code-bg:#111726; --code-text:#c3ccdf;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1420; --panel:#171d2b; --panel-2:#1c2333;
+    --border:#28303f; --text:#e6e9f0; --muted:#9aa4b8; --muted-2:#6b7488;
+    --brand:#5b82ff; --brand-dark:#3a5fe0; --brand-light:#1b2542;
+    --canary:#f0b53f; --canary-bg:#2a2312; --canary-border:#4a3d16;
+    --code-bg:#111726; --code-text:#c3ccdf;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f6f9; --panel:#ffffff; --panel-2:#fafbfd;
+    --border:#e2e6ee; --text:#1a1f2b; --muted:#5c6472; --muted-2:#8790a0;
+    --brand:#2454ff; --brand-dark:#173bb0; --brand-light:#eaf0ff;
+    --canary:#d99413; --canary-bg:#fdf3df; --canary-border:#f0d999;
+    --code-bg:#f5f7fb; --code-text:#243049;
+    --shadow:0 1px 2px rgba(20,25,40,.05), 0 8px 26px rgba(20,25,40,.06);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto;} }
+  body{margin:0; font-family:var(--sans); background:var(--bg); color:var(--text); line-height:1.6; font-size:16px; -webkit-font-smoothing:antialiased;}
+  h1,h2,h3,h4{letter-spacing:-.01em; line-height:1.2; text-wrap:balance; margin:0;}
+  p{margin:0;}
+  code{font-family:var(--mono); font-size:.94em;}
+  a{color:var(--brand);}
+
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:20; background:var(--panel); border:1px solid var(--border);
+    color:var(--muted); border-radius:999px; padding:7px 14px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; box-shadow:var(--shadow);
+  }
+  .theme-toggle:hover{color:var(--text);}
+
+  .wrap{max-width:820px; margin:0 auto; padding:0 22px;}
+
+  .backlink{display:inline-flex; align-items:center; gap:6px; font-size:13.5px; font-weight:600; color:var(--muted); text-decoration:none; margin-top:26px;}
+  .backlink:hover{color:var(--text);}
+
+  header.hero{padding:22px 0 8px;}
+  .eyebrow{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.12em; color:var(--canary); margin:22px 0 12px;}
+  header.hero h1{font-size:clamp(26px,5vw,38px); font-weight:750;}
+  header.hero .lede{font-size:clamp(16px,2.4vw,18px); color:var(--muted); margin-top:14px; max-width:var(--measure);}
+
+  main{padding:26px 0 10px;}
+
+  .block{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:22px 24px; margin-bottom:16px; box-shadow:var(--shadow); max-width:100%;
+  }
+  .block h2{
+    font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--brand);
+    display:flex; align-items:baseline; gap:10px; margin-bottom:10px;
+  }
+  .block h2 .idx{
+    font-variant-numeric:tabular-nums; color:var(--muted-2); font-size:12.5px; font-weight:700;
+  }
+  .block p{margin:0 0 11px; max-width:var(--measure);}
+  .block p:last-child{margin-bottom:0;}
+
+  .formula{
+    font-family:var(--mono); font-size:13.5px; color:var(--code-text);
+    background:var(--code-bg); border:1px solid var(--border); border-radius:8px;
+    padding:11px 14px; margin:10px 0 12px; overflow-x:auto; white-space:nowrap;
+    -webkit-overflow-scrolling:touch;
+  }
+  .note{
+    border-left:3px solid var(--canary); padding:4px 0 4px 14px; color:var(--muted);
+    font-size:14px; margin:10px 0 2px;
+  }
+  .note em{color:var(--text); font-style:italic;}
+
+  .takeaway{
+    background:var(--brand-light); border:1px solid color-mix(in srgb,var(--brand) 30%, transparent);
+    border-radius:var(--radius); padding:16px 20px; font-size:15px; margin-bottom:16px;
+  }
+  .takeaway b{color:var(--brand-dark);}
+  :root[data-theme="dark"] .takeaway b{color:var(--brand);}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .takeaway b{color:var(--brand);} }
+
+  .ref{
+    color:var(--muted); font-size:13px; border-top:1px solid var(--border);
+    margin-top:8px; padding-top:16px;
+  }
+
+  footer{border-top:1px solid var(--border); margin-top:24px; padding:26px 0 60px; text-align:center; color:var(--muted-2); font-size:13.5px;}
+  .footlinks{display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-bottom:12px;}
+  .footlinks a{color:var(--brand); text-decoration:none; font-weight:640;}
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeBtn">◑ Theme</button>
+
+<div class="wrap">
+  <a class="backlink" href="how-it-works.html">← How it works</a>
+
+  <header class="hero">
+    <div class="eyebrow">AI Data-Leakage Canary System</div>
+    <h1>The maths behind it</h1>
+    <p class="lede">Why a hit is proof, a null is a number, and neither is a guess. For the reader who wants the reasoning under the proposal — not just the story.</p>
+  </header>
+
+  <main>
+    <div class="block">
+      <h2><span class="idx">01</span> A match is conclusive, not suggestive</h2>
+      <p>
+        Every canary carries a randomly generated marker (e.g. <code>Xanova-7Q4M</code>).
+        A 12-character alphanumeric marker has roughly 1 in 4.7&nbsp;×&nbsp;10<sup>18</sup>
+        odds of appearing by coincidence. Feed that into Bayes' theorem with even a
+        pessimistic prior on leaks and the posterior probability that a match means a
+        real escape is indistinguishable from 1.
+      </p>
+      <div class="formula">P(leak&nbsp;|&nbsp;match) = P(match|leak)·P(leak) / [ P(match|leak)·P(leak) + P(match|¬leak)·P(¬leak) ]&nbsp; ≈ 1</div>
+      <p class="note">
+        What a match proves is that the marker escaped, not which route it took.
+        That's why the console tells you to probe <em>around</em> the fact and never
+        type the marker into a public AI: it keeps your own probing from becoming a
+        second escape route and preserves the claim above.
+      </p>
+    </div>
+
+    <div class="block">
+      <h2><span class="idx">02</span> Attribution: log₂(n) markers to trace n sources</h2>
+      <p>
+        Each controlled difference between variants encodes one bit, so distinguishing
+        <em>n</em> teams or individuals needs only <code>⌈log₂(n)⌉</code> differences:
+        5 bits cover 32 sources, 7 cover 128. It's the same coding principle as digital
+        watermarking.
+      </p>
+      <p class="note">
+        Design decision: the bits live inside the marker itself
+        (<code>Xanova-A7</code> vs <code>Xanova-K2</code>), not in the surrounding
+        wording. AI systems paraphrase prose, which destroys wording-based bits.
+        A marker survives verbatim or not at all, so attribution either arrives
+        intact or stays silent. It never arrives corrupted.
+      </p>
+    </div>
+
+    <div class="block">
+      <h2><span class="idx">03</span> A null result with a confidence level</h2>
+      <p>
+        Retrieval-grounded AI doesn't surface the same sources every time, so one
+        quiet probe proves little. If a leaked canary would surface in a fraction
+        <em>p</em> of relevant queries, the chance of catching it after <em>n</em>
+        probes is:
+      </p>
+      <div class="formula">P(detect) = 1 − (1 − p)<sup>n</sup> &nbsp;&nbsp;→&nbsp;&nbsp; n = ln(1 − C) / ln(1 − p)</div>
+      <p>
+        At p&nbsp;=&nbsp;0.3, nine probes give 95% confidence; thirteen give 99%.
+        At p&nbsp;=&nbsp;0.1, you need 29 for 95%. That turns "we asked and got
+        nothing" into a statable, auditable claim.
+      </p>
+      <p class="note">
+        p can't be measured until a real leak exists, so treat this as a sensitivity
+        analysis: bound the answer across plausible values of p rather than claiming
+        to know it. The formula sets your probe schedule either way.
+      </p>
+    </div>
+
+    <div class="block">
+      <h2><span class="idx">04</span> Why we plant wide, not loud</h2>
+      <p>
+        Model memorisation research shows extraction probability grows log-linearly
+        with how many times a sequence is duplicated in training data, and sequences
+        seen once are almost never extractable. Hence two design choices: canaries are
+        planted as multiple paraphrases across multiple surfaces, and the retrieval
+        path is treated as primary because it needs no repetition at all. One
+        crawlable page with a globally unique marker is enough for a search-grounded
+        AI to leak it within days.
+      </p>
+      <div class="ref">
+        Reference: Carlini et&nbsp;al., <em>Quantifying Memorization Across Neural
+        Language Models</em> (2022). Attribution coding follows standard digital
+        watermarking theory. No probability here relies on vendor claims; every
+        figure above is derived from the marker design and stated assumptions.
+      </div>
+    </div>
+
+    <div class="takeaway">
+      <b>The one-line version:</b> a hit is proof (§1), the wording tells you the source (§2),
+      a quiet result comes with a confidence level (§3), and planting wide beats planting loud (§4).
+    </div>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="footlinks">
+      <a href="how-it-works.html">← How it works</a>
+      <a href="index.html">Open the Canary Console →</a>
+    </div>
+    Part of the AI Data-Leakage Canary System · a defensive security tool · runs on infrastructure you own
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var btn = document.getElementById("themeBtn");
+    try{ var s = localStorage.getItem("canary_theme"); if(s) document.documentElement.setAttribute("data-theme", s); }catch(e){}
+    btn.addEventListener("click", function(){
+      var cur = document.documentElement.getAttribute("data-theme");
+      var isDark = cur ? cur==="dark" : matchMedia("(prefers-color-scheme:dark)").matches;
+      var next = isDark ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try{ localStorage.setItem("canary_theme", next); }catch(e){}
+    });
+  })();
+</script>
+</body>
+</html>

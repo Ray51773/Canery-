@@ -137,6 +137,22 @@
 
   .note{font-size:13.5px; color:var(--muted); border-left:3px solid var(--canary); padding:6px 0 6px 14px; margin-top:10px;}
 
+  .maths-cta{
+    display:flex; align-items:center; gap:16px; text-decoration:none;
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px 20px; box-shadow:var(--shadow); transition:border-color .15s, transform .15s;
+  }
+  .maths-cta:hover{border-color:var(--brand); transform:translateY(-1px);}
+  @media (prefers-reduced-motion:reduce){ .maths-cta:hover{transform:none;} }
+  .maths-cta .mc-ic{
+    flex-shrink:0; width:46px; height:46px; border-radius:12px; background:var(--brand-light); color:var(--brand);
+    display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700; font-family:var(--mono);
+  }
+  .maths-cta .mc-body{display:flex; flex-direction:column; gap:3px; min-width:0;}
+  .maths-cta .mc-title{color:var(--text); font-weight:680; font-size:16px;}
+  .maths-cta .mc-sub{color:var(--muted); font-size:13.5px;}
+  .maths-cta .mc-arr{margin-left:auto; color:var(--brand); font-size:20px; flex-shrink:0;}
+
   footer{border-top:1px solid var(--border); margin-top:20px; padding:30px 0 60px; text-align:center; color:var(--muted-2); font-size:13.5px;}
   footer a{color:var(--muted); font-weight:600;}
   .footlinks{display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-bottom:14px;}
@@ -291,9 +307,23 @@
   </div>
 </section>
 
+<section>
+  <div class="wrap">
+    <a class="maths-cta" href="the-maths.html">
+      <span class="mc-ic" aria-hidden="true">∑</span>
+      <span class="mc-body">
+        <span class="mc-title">The maths behind it</span>
+        <span class="mc-sub">Why a hit is proof, a null is a number, and neither is a guess — the reasoning under the proposal.</span>
+      </span>
+      <span class="mc-arr" aria-hidden="true">→</span>
+    </a>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <div class="footlinks">
+      <a href="the-maths.html">The maths behind it →</a>
       <a href="index.html">Open the Canary Console →</a>
     </div>
     Part of the AI Data-Leakage Canary System · a defensive security tool · runs on infrastructure you own
