@@ -272,12 +272,14 @@
   .match-result.hit .mr-head{color:var(--triggered);}
   .match-result.clean .mr-head{color:var(--ok);}
 
-  .probe-prompt{
-    display:flex; align-items:center; gap:12px; background:var(--panel-2); border:1px solid var(--border);
-    border-radius:var(--radius-sm); padding:11px 12px 11px 14px; margin-bottom:8px;
-  }
-  .probe-prompt .q{flex:1; min-width:0; font-size:14px; color:var(--text);}
-  .probe-prompt .btn{flex-shrink:0;}
+  .probe-item{background:var(--panel-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 12px; margin-bottom:10px;}
+  .probe-q-row{display:flex; align-items:center; gap:10px;}
+  .probe-q-row .qn{flex-shrink:0; width:22px; height:22px; border-radius:50%; background:var(--brand-light); color:var(--brand); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;}
+  .probe-q-row .q{flex:1; min-width:0; font-size:14px; color:var(--text);}
+  .probe-q-row .btn{flex-shrink:0;}
+  .probe-answer{width:100%; margin-top:9px; min-height:58px; font-family:var(--sans); font-size:13px; line-height:1.5;}
+  .probe-item.matched{border-color:var(--triggered); box-shadow:inset 3px 0 0 var(--triggered);}
+  .probe-item.clean{border-color:var(--ok);}
   .probe-empty{color:var(--muted-2); font-size:13px; padding:4px 0;}
 
   .toast{
@@ -497,7 +499,12 @@
       </div>
 
       <div class="field">
-        <label class="field-label">2 · Ask a public AI one of these questions</label>
+        <label class="field-label" for="detectTool">2 · Which tool did you ask? <span style="text-transform:none; font-weight:500;">(optional)</span></label>
+        <input type="text" id="detectTool" placeholder="e.g. Copilot (free), ChatGPT" style="max-width:320px;">
+      </div>
+
+      <div class="field">
+        <label class="field-label">3 · Ask each question, then paste its answer underneath</label>
         <div id="probePrompts"></div>
         <div class="warn-box" style="margin:10px 0 0;">
           <strong>Never paste the fake fact or its marker into the AI.</strong>
@@ -505,15 +512,7 @@
         </div>
       </div>
 
-      <div class="field">
-        <label class="field-label" for="detectTool">3 · Which tool did you ask?</label>
-        <input type="text" id="detectTool" placeholder="e.g. Copilot (free), ChatGPT" style="max-width:320px;">
-      </div>
-      <div class="field">
-        <label class="field-label" for="detectText">4 · Paste the AI's full answer</label>
-        <textarea id="detectText" placeholder="Paste exactly what the AI said…"></textarea>
-      </div>
-      <button class="btn" id="btnScan">⌕ Scan against my canaries</button>
+      <button class="btn" id="btnScan">⌕ Scan the answers</button>
       <div id="scanResult"></div>
     </div>
 
@@ -827,7 +826,7 @@ function canaryCard(c){
         <span style="flex:1; min-width:0;">${esc(h.event_name||"read")} from <span class="mono">${esc(h.source_ip||"?")}</span> · <span class="mono" style="color:var(--muted)">${esc((h.user_agent||"").slice(0,42))}</span></span>
         <span class="when">${esc((h.event_time||h.at||"").slice(0,16).replace("T"," "))}</span></div>`),
     ...pr.map(h=>`<div class="hit-line"><span class="hit-badge probe">PROBE</span>
-        <span style="flex:1; min-width:0;">${esc(h.tool||"AI")} matched <span class="mono">${esc(h.token)}</span>${h.audience?` · variant <b>${esc(h.audience)}</b>`:""}</span>
+        <span style="flex:1; min-width:0;">${esc(h.tool||"AI")} matched <span class="mono">${esc(h.token)}</span>${h.audience?` · variant <b>${esc(h.audience)}</b>`:""}${h.question?`<br><span style="color:var(--muted-2); font-size:11.5px;">from: “${esc(h.question.length>70?h.question.slice(0,70)+"…":h.question)}”</span>`:""}</span>
         <span class="when">${esc((h.at||"").slice(0,16).replace("T"," "))}</span></div>`)
   ].join("") : "";
 
@@ -1023,51 +1022,77 @@ function inversePromptsFor(canary){
 }
 function renderProbePrompts(){
   const box = $("#probePrompts");
+  // Preserve any answers already typed, keyed by their question text.
+  const prev = {};
+  $$("#probePrompts .probe-answer").forEach(t=>{ if(t.value) prev[t.dataset.q] = t.value; });
+
   const c = currentCanary($("#detectCanary").value);
   if(!c){ box.innerHTML = `<div class="probe-empty">Save a canary first, then suggested questions appear here.</div>`; return; }
   const prompts = inversePromptsFor(c);
   if(!prompts.length){ box.innerHTML = `<div class="probe-empty">No suggested question for this category.</div>`; return; }
   const name = companyName("");
   const banner = name
-    ? `<div class="probe-empty" style="margin-bottom:8px;">Questions target <b style="color:var(--text)">${esc(name)}</b>. Change it on the <a href="#" data-goto="generate">Generate tab</a>.</div>`
-    : `<div class="probe-empty" style="margin-bottom:8px;">⚠ No company name set — questions say “your company”. Add it on the <a href="#" data-goto="generate">Generate tab</a> so the AI knows who you mean.</div>`;
-  const schedule = `<div class="probe-empty" style="margin-top:8px;">Ask each question in a <b style="color:var(--text)">fresh chat</b> (no shared history). One quiet answer proves little — about <b style="color:var(--text)">9 probes</b> gives ~95% confidence if a leak would surface roughly 1-in-3 times. <a href="the-maths.html" target="_blank" rel="noopener">Why →</a></div>`;
-  box.innerHTML = banner + prompts.map(q => `
-    <div class="probe-prompt">
-      <span class="q">${esc(q)}</span>
-      <button class="btn small secondary" data-copytext="${esc(q)}">⧉ Copy</button>
+    ? `<div class="probe-empty" style="margin-bottom:10px;">Questions target <b style="color:var(--text)">${esc(name)}</b>. Change it on the <a href="#" data-goto="generate">Generate tab</a>.</div>`
+    : `<div class="probe-empty" style="margin-bottom:10px;">⚠ No company name set — questions say “your company”. Add it on the <a href="#" data-goto="generate">Generate tab</a> so the AI knows who you mean.</div>`;
+  const schedule = `<div class="probe-empty" style="margin-top:8px;">Ask each question in a <b style="color:var(--text)">fresh chat</b> (no shared history), then paste its answer in the box under it. One quiet answer proves little — about <b style="color:var(--text)">9 probes</b> gives ~95% confidence if a leak would surface roughly 1-in-3 times. <a href="the-maths.html" target="_blank" rel="noopener">Why →</a></div>`;
+  box.innerHTML = banner + prompts.map((q,i) => `
+    <div class="probe-item">
+      <div class="probe-q-row">
+        <span class="qn">${i+1}</span>
+        <span class="q">${esc(q)}</span>
+        <button class="btn small secondary" data-copytext="${esc(q)}">⧉ Copy</button>
+      </div>
+      <textarea class="probe-answer" data-q="${esc(q)}" placeholder="Paste this question's answer here…">${esc(prev[q]||"")}</textarea>
     </div>`).join("") + schedule;
 }
 
 function scanForLeak(){
-  const text = $("#detectText").value;
   const tool = $("#detectTool").value.trim() || "public AI";
   const box = $("#scanResult");
-  if(!text.trim()){ box.innerHTML=""; toast("Paste the AI's response first"); return; }
+  const boxes = $$("#probePrompts .probe-answer");
+  const answered = boxes.filter(t => t.value.trim());
+  if(!answered.length){ box.innerHTML=""; toast("Paste at least one answer under a question first"); return; }
+
   const active = STATE.canaries.filter(c=>c.status!=="retired");
-  const found = [];
-  active.forEach(c=>{ const m = matchCanary(c,text); if(m.length) found.push({c,m}); });
-  if(!found.length){
+  // Scan each answer against every active canary, keeping the question that
+  // produced it so a hit is traceable to the exact angle that surfaced it.
+  const findings = [];          // {question, canary, matches}
+  boxes.forEach(t=>{
+    const answer = t.value.trim();
+    t.closest(".probe-item").classList.remove("matched","clean");
+    if(!answer) return;
+    let anyHit = false;
+    active.forEach(c=>{
+      const m = matchCanary(c, answer);
+      if(m.length){ findings.push({question:t.dataset.q, c, m}); anyHit = true; }
+    });
+    t.closest(".probe-item").classList.add(anyHit ? "matched" : "clean");
+  });
+
+  if(!findings.length){
     box.innerHTML = `<div class="match-result clean"><div class="mr-head">✓ No canary detected</div>
-      Nothing in that response matches any active canary's unique markers. That's the expected result if nothing has leaked.</div>`;
+      Scanned ${answered.length} answer${answered.length>1?"s":""}. Nothing matches any active canary's unique markers — the expected result if nothing has leaked. (One quiet round isn't proof; keep probing — see the schedule above.)</div>`;
     return;
   }
-  const parts = found.map(({c,m})=>{
+
+  const parts = findings.map(({question,c,m})=>{
     const auds = [...new Set(m.filter(x=>x.audience).map(x=>x.audience))];
     const toks = m.map(x=>`<span class="tag" style="margin:2px 4px 2px 0;">${esc(x.kind)}: <span class="mono">${esc(x.token)}</span></span>`).join("");
-    return `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--triggered);">
+    return `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--triggered);">
+      <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">From the answer to: “${esc(question)}”</div>
       <b>${esc(c.codename)}</b> <span class="cc-id mono">${esc(c.id)}</span><br>${toks}
       ${auds.length?`<div style="margin-top:6px;">Traced to variant(s): ${auds.map(a=>`<span class="aud">${esc(a)}</span>`).join(" ")}</div>`:""}
-      <div style="margin-top:8px;"><button class="btn tiny" data-logprobe="${c.id}" data-tool="${esc(tool)}" data-token="${esc(m[0].token)}" data-aud="${esc(auds[0]||"")}">Log this as a probe hit</button></div>
+      <div style="margin-top:8px;"><button class="btn tiny" data-logprobe="${c.id}" data-tool="${esc(tool)}" data-token="${esc(m[0].token)}" data-aud="${esc(auds[0]||"")}" data-q="${esc(question)}">Log this as a probe hit</button></div>
     </div>`;
   }).join("");
-  box.innerHTML = `<div class="match-result hit"><div class="mr-head">⚠ Possible leak — ${found.length} canary match${found.length>1?"es":""}</div>
-    A public AI surfaced markers from ${found.length} of your canaries. Review, then log it to the dashboard.${parts}</div>`;
+  const canaries = new Set(findings.map(f=>f.c.id)).size;
+  box.innerHTML = `<div class="match-result hit"><div class="mr-head">⚠ Possible leak — ${findings.length} match${findings.length>1?"es":""} across ${canaries} canar${canaries>1?"ies":"y"}</div>
+    A public AI surfaced your markers. Each match below names the question that produced it. Review, then log to the dashboard.${parts}</div>`;
 }
-function logProbeHit(canaryId, tool, token, aud){
+function logProbeHit(canaryId, tool, token, aud, question){
   const c = currentCanary(canaryId); if(!c) return;
   c.probe_hits = c.probe_hits||[];
-  c.probe_hits.push({ tool, token, audience:aud||null, at:nowISO() });
+  c.probe_hits.push({ tool, token, audience:aud||null, question:question||"", at:nowISO() });
   c.status="triggered";
   save(); toast("Probe hit logged — canary marked “triggered”");
   refreshAll();
@@ -1254,7 +1279,7 @@ function init(){
     const act = e.target.closest("[data-act]");
     if(act){ const id=act.dataset.id; if(act.dataset.act==="retire") retireCanary(id); if(act.dataset.act==="delete") deleteCanary(id); return; }
     const lp = e.target.closest("[data-logprobe]");
-    if(lp){ logProbeHit(lp.dataset.logprobe, lp.dataset.tool, lp.dataset.token, lp.dataset.aud); return; }
+    if(lp){ logProbeHit(lp.dataset.logprobe, lp.dataset.tool, lp.dataset.token, lp.dataset.aud, lp.dataset.q); return; }
   });
 
   refreshAll();
