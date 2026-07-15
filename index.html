@@ -345,6 +345,29 @@
     <div class="section-title"><h2>Generate a canary</h2></div>
     <p class="section-sub">Create a believable but entirely fake "internal fact" with a one-of-a-kind marker, plus several reworded variants you can hand to different teams. If the exact wording ever leaks, the variant tells you who it came from.</p>
 
+    <div class="panel">
+      <div class="row-between" style="margin-bottom:6px;">
+        <h3 style="margin:0;">Company profile</h3>
+        <span class="tag" id="companyStatus">not set</span>
+      </div>
+      <p class="panel-lead">Your real company name — the one thing here that isn't fake. It doesn't go into the decoy's secret marker; it's what lets the leak-detection questions actually name your firm when you ask a public AI (e.g. “What is <em>Acme Corp</em> shipping in Q3?”). Saved only in this browser.</p>
+      <div class="grid-3">
+        <div class="field">
+          <label class="field-label" for="companyName">Company name</label>
+          <input type="text" id="companyName" placeholder="e.g. Acme Corp" autocomplete="organization">
+        </div>
+        <div class="field">
+          <label class="field-label" for="companySector">Sector <span style="text-transform:none; font-weight:500;">(optional)</span></label>
+          <input type="text" id="companySector" placeholder="e.g. fintech, logistics">
+        </div>
+        <div class="field">
+          <label class="field-label" for="companyAliases">Also known as <span style="text-transform:none; font-weight:500;">(optional)</span></label>
+          <input type="text" id="companyAliases" placeholder="ticker, brand, short name">
+        </div>
+      </div>
+      <div class="field-hint">This is used to phrase the leak-detection questions on the “Detect a leak” tab. It's never placed inside a canary's unique marker.</div>
+    </div>
+
     <div class="grid-2">
       <div class="panel">
         <h3>1 · What kind of fact?</h3>
@@ -601,8 +624,8 @@ const CATEGORIES = {
       "Per roadmap review, {codename} ({phrase}) is committed for {quarter}. Breakdown: {s3_url}",
       "{codename} will replace the legacy pipeline in {quarter}; migration runbook lives at {s3_url}"
     ],
-    inverse: ["What new sync or data-pipeline products are shipping in {quarter}?",
-              "Are there any unreleased engineering codenames planned for {quarter}?"]
+    inverse: ["What new products or engineering projects is {company} shipping in {quarter}?",
+              "Does {company} have any unreleased product codenames planned for {quarter}?"]
   },
   financials: {
     label: "Financials",
@@ -613,8 +636,8 @@ const CATEGORIES = {
       "Confidential: {quarter} run-rate now ${number}. Full waterfall in {s3_url}",
       "FP&A revised {quarter} to ${number} after the {phrase} adjustment. See {s3_url}"
     ],
-    inverse: ["What were the reported {quarter} financial results?",
-              "Any leaked or pre-announcement revenue figures for {quarter}?"]
+    inverse: ["What were {company}'s reported {quarter} financial results?",
+              "Are there any leaked or pre-announcement revenue figures for {company} in {quarter}?"]
   },
   incident: {
     label: "Security incident",
@@ -625,8 +648,8 @@ const CATEGORIES = {
       "Sev-1 {codename} ({phrase}) is now closed. Full incident report: {s3_url}",
       "Internal only: {codename} root cause traced to {phrase}; {number} accounts affected. {s3_url}"
     ],
-    inverse: ["Were there any major security incidents or outages disclosed recently?",
-              "Any breach or data-exposure reports mentioning a named incident?"]
+    inverse: ["Has {company} disclosed any major security incidents or outages recently?",
+              "Are there any breach or data-exposure reports involving {company}?"]
   },
   exec_comms: {
     label: "Executive comms",
@@ -637,8 +660,8 @@ const CATEGORIES = {
       "Leadership offsite readout — {codename} owns the {phrase} bet this year. Deck: {s3_url}",
       "Confidential exec memo re: {codename}. Ask is ${number} for {phrase}. Full text: {s3_url}"
     ],
-    inverse: ["What are the company's stated strategic priorities this year?",
-              "Any internal executive memos or program names that have surfaced publicly?"]
+    inverse: ["What are {company}'s stated strategic priorities this year?",
+              "Have any internal {company} executive memos or program names surfaced publicly?"]
   },
   legal: {
     label: "Legal matters",
@@ -649,8 +672,8 @@ const CATEGORIES = {
       "Under seal: {codename} concerns the {phrase} claim; reserve set at ${number}. {s3_url}",
       "Outside counsel memo on {codename}: {phrase}. Full analysis at {s3_url}"
     ],
-    inverse: ["Is the company involved in any notable undisclosed legal matters?",
-              "Any leaked settlement figures or litigation codenames?"]
+    inverse: ["Is {company} involved in any notable undisclosed legal matters?",
+              "Are there any leaked settlement figures or litigation involving {company}?"]
   }
 };
 
@@ -690,9 +713,13 @@ const LS_KEY = "canary_console_v1";
 let STATE = load();
 
 function load(){
-  try{ const raw = localStorage.getItem(LS_KEY); if(raw) return JSON.parse(raw); }catch(e){}
-  return { canaries: [] };
+  let s = { canaries: [] };
+  try{ const raw = localStorage.getItem(LS_KEY); if(raw) s = JSON.parse(raw); }catch(e){}
+  if(!Array.isArray(s.canaries)) s.canaries = [];
+  if(!s.company || typeof s.company !== "object") s.company = { name:"", sector:"", aliases:"" };
+  return s;
 }
+function companyName(fallback){ return (STATE.company && STATE.company.name || "").trim() || (fallback||""); }
 function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(STATE)); }catch(e){ toast("Could not save — browser storage full or blocked"); } }
 
 /* =========================================================================
@@ -900,13 +927,15 @@ function renderPlantText(){
   const v = c.variants.find(x=>x.id===$("#plantVariant").value) || c.variants[0];
   const fmt = PLANT_FMT.current;
   const cat = CATEGORIES[c.category].label;
+  const co = companyName("");
+  const head = (co ? co + " — " : "") + cat;
   let out="";
   if(fmt==="wiki"){
-    out = `# ${cat} — internal note\n\n_Audience: ${v.audience}_\n\n${v.text}\n\n> Source of record: ${c.s3_url}`;
+    out = `# ${head} — internal note\n\n_Audience: ${v.audience}_\n\n${v.text}\n\n> Source of record: ${c.s3_url}`;
   } else if(fmt==="confluence"){
-    out = `<p><em>Audience: ${v.audience}</em></p>\n<p>${v.text}</p>\n<p>Source of record: <code>${c.s3_url}</code></p>`;
+    out = `<p><em>${co ? co + " — " : ""}Audience: ${v.audience}</em></p>\n<p>${v.text}</p>\n<p>Source of record: <code>${c.s3_url}</code></p>`;
   } else if(fmt==="slack"){
-    out = `:lock: *${cat} — internal*\n${v.text}\n_Source of record: ${c.s3_url}_`;
+    out = `:lock: *${head} — internal*\n${v.text}\n_Source of record: ${c.s3_url}_`;
   } else {
     out = `${v.text}\n\nSource of record: ${c.s3_url}`;
   }
@@ -963,7 +992,8 @@ function inversePromptsFor(canary){
   // quarter, and deliberately never containing the codename or any marker.
   const cat = CATEGORIES[canary.category];
   if(!cat) return [];
-  return (cat.inverse || []).map(q => fill(q, {quarter: canary.quarter}));
+  const company = companyName("your company");
+  return (cat.inverse || []).map(q => fill(q, {quarter: canary.quarter, company}));
 }
 function renderProbePrompts(){
   const box = $("#probePrompts");
@@ -971,7 +1001,11 @@ function renderProbePrompts(){
   if(!c){ box.innerHTML = `<div class="probe-empty">Save a canary first, then suggested questions appear here.</div>`; return; }
   const prompts = inversePromptsFor(c);
   if(!prompts.length){ box.innerHTML = `<div class="probe-empty">No suggested question for this category.</div>`; return; }
-  box.innerHTML = prompts.map(q => `
+  const name = companyName("");
+  const banner = name
+    ? `<div class="probe-empty" style="margin-bottom:8px;">Questions target <b style="color:var(--text)">${esc(name)}</b>. Change it on the <a href="#" data-goto="generate">Generate tab</a>.</div>`
+    : `<div class="probe-empty" style="margin-bottom:8px;">⚠ No company name set — questions say “your company”. Add it on the <a href="#" data-goto="generate">Generate tab</a> so the AI knows who you mean.</div>`;
+  box.innerHTML = banner + prompts.map(q => `
     <div class="probe-prompt">
       <span class="q">${esc(q)}</span>
       <button class="btn small secondary" data-copytext="${esc(q)}">⧉ Copy</button>
@@ -1091,6 +1125,32 @@ function setCount(tab,val){
   c.textContent = val;
 }
 
+/* ---------- company profile ---------- */
+function loadCompanyFields(){
+  $("#companyName").value = STATE.company.name || "";
+  $("#companySector").value = STATE.company.sector || "";
+  $("#companyAliases").value = STATE.company.aliases || "";
+  updateCompanyStatus();
+}
+function saveCompany(){
+  STATE.company = {
+    name: $("#companyName").value.trim(),
+    sector: $("#companySector").value.trim(),
+    aliases: $("#companyAliases").value.trim(),
+  };
+  save();
+  updateCompanyStatus();
+  renderProbePrompts();
+  renderPlantText();
+}
+function updateCompanyStatus(){
+  const tag = $("#companyStatus");
+  const name = companyName("");
+  tag.textContent = name ? name : "not set";
+  tag.style.background = name ? "var(--brand-light)" : "";
+  tag.style.color = name ? "var(--brand-dark)" : "";
+}
+
 let toastT=null;
 function toast(msg){
   const t=$("#toast"); t.textContent=msg; t.classList.add("show");
@@ -1109,6 +1169,10 @@ function init(){
   gc.innerHTML = Object.entries(CATEGORIES).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");
   const setCatHint = ()=> $("#catHint").textContent = CATEGORIES[gc.value].hint;
   gc.addEventListener("change", setCatHint); setCatHint();
+
+  // company profile
+  loadCompanyFields();
+  ["#companyName","#companySector","#companyAliases"].forEach(s=> $(s).addEventListener("input", saveCompany));
 
   $("#plantDate").value = todayStr();
 
@@ -1155,7 +1219,7 @@ function init(){
     if(copyBtn){ const el=$(copyBtn.dataset.copy); if(el){ navigator.clipboard.writeText(el.textContent).then(()=>toast("Copied to clipboard")); } return; }
     const copyText = e.target.closest("[data-copytext]");
     if(copyText){ navigator.clipboard.writeText(copyText.dataset.copytext).then(()=>toast("Prompt copied — paste it into the AI tool")); return; }
-    const goto = e.target.closest("[data-goto]"); if(goto){ switchTab(goto.dataset.goto); return; }
+    const goto = e.target.closest("[data-goto]"); if(goto){ e.preventDefault(); switchTab(goto.dataset.goto); return; }
     const act = e.target.closest("[data-act]");
     if(act){ const id=act.dataset.id; if(act.dataset.act==="retire") retireCanary(id); if(act.dataset.act==="delete") deleteCanary(id); return; }
     const lp = e.target.closest("[data-logprobe]");
