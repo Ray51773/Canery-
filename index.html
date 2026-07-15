@@ -272,6 +272,35 @@
   .match-result.hit .mr-head{color:var(--triggered);}
   .match-result.clean .mr-head{color:var(--ok);}
 
+  /* ---------- Report ---------- */
+  .report-head{border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); padding:18px 20px; margin-bottom:16px; box-shadow:var(--shadow);}
+  .report-head h3{font-size:20px; margin:0 0 2px; text-transform:none; letter-spacing:-.01em; color:var(--text);}
+  .report-head .meta{color:var(--muted); font-size:13px;}
+  .report-h{font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:22px 0 10px; font-weight:700;}
+  .breakdown{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;}
+  .breakdown .bd{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 13px; box-shadow:var(--shadow);}
+  .breakdown .bd .k{font-size:12.5px; color:var(--muted);}
+  .breakdown .bd .val{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:3px;}
+  .rtable-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow);}
+  table.rtable{width:100%; border-collapse:collapse; font-size:13px; background:var(--panel); min-width:640px;}
+  table.rtable th, table.rtable td{padding:9px 12px; text-align:left; border-bottom:1px solid var(--border-2); white-space:nowrap;}
+  table.rtable th{font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:var(--panel-2); position:sticky; top:0;}
+  table.rtable td.num{text-align:right; font-variant-numeric:tabular-nums;}
+  table.rtable tr:last-child td{border-bottom:none;}
+  table.rtable td.hit{color:var(--triggered); font-weight:700;}
+  .report-note{color:var(--muted-2); font-size:12px; margin-top:14px;}
+
+  @media print{
+    .app-header, nav.tabs, footer, .toast, .theme-toggle, .no-print{display:none !important;}
+    body{background:#fff; color:#000; font-size:12px;}
+    main{padding:0; max-width:100%;}
+    .tabpanel{display:none !important;}
+    #tab-report.tabpanel{display:block !important;}
+    .report-head, .breakdown .bd, .rtable-wrap, .stat{box-shadow:none !important; border-color:#bbb !important;}
+    table.rtable th{position:static;}
+    #tab-report{animation:none !important;}
+  }
+
   .probe-item{background:var(--panel-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 12px; margin-bottom:10px;}
   .probe-q-row{display:flex; align-items:center; gap:10px;}
   .probe-q-row .qn{flex-shrink:0; width:22px; height:22px; border-radius:50%; background:var(--brand-light); color:var(--brand); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;}
@@ -330,6 +359,7 @@
   <button role="tab" data-tab="generate" aria-selected="false">Generate</button>
   <button role="tab" data-tab="plant" aria-selected="false">Plant</button>
   <button role="tab" data-tab="detect" aria-selected="false">Detect a leak</button>
+  <button role="tab" data-tab="report" aria-selected="false">Report</button>
   <button role="tab" data-tab="golive" aria-selected="false">Go live (AWS &amp; probe)</button>
 </nav>
 
@@ -604,6 +634,19 @@ python3 -m canary ingest              # pull S3 honeytoken hits into the dashboa
 python3 -m canary status              # full correlation report</pre>
       </div>
     </div>
+  </section>
+
+  <!-- ============ REPORT ============ -->
+  <section class="tabpanel" id="tab-report" role="tabpanel">
+    <div class="row-between" style="margin-bottom:4px;">
+      <div class="section-title"><h2>Activity report</h2></div>
+      <div class="btn-row no-print">
+        <button class="btn secondary small" id="btnPrintReport">🖨 Print / Save PDF</button>
+        <button class="btn secondary small" id="btnCsvReport">⤓ Download CSV</button>
+      </div>
+    </div>
+    <p class="section-sub no-print">A summary of what's been done — canaries created, planted and triggered, plus detections. Print it or save it as a PDF for a status update.</p>
+    <div id="reportBody"></div>
   </section>
 </main>
 
@@ -964,6 +1007,112 @@ function renderCli(){
   $("#cliCreate").textContent = lines;
 }
 
+/* ---------- Report ---------- */
+function reportData(){
+  const cs = STATE.canaries;
+  const byStatus = {created:0, planted:0, triggered:0, retired:0};
+  const byCat = {}, byAud = {};
+  let variants=0, plants=0, s3=0, probe=0;
+  cs.forEach(c=>{
+    byStatus[c.status] = (byStatus[c.status]||0) + 1;
+    byCat[c.category] = (byCat[c.category]||0) + 1;
+    (c.variants||[]).forEach(v=>{ variants++; byAud[v.audience] = (byAud[v.audience]||0) + 1; });
+    plants += (c.plants||[]).length;
+    s3 += (c.s3_hits||[]).length;
+    probe += (c.probe_hits||[]).length;
+  });
+  return { cs, byStatus, byCat, byAud, variants, plants, s3, probe,
+           plantedCount: byStatus.planted + byStatus.triggered };
+}
+function renderReport(){
+  const d = reportData();
+  const co = companyName("");
+  const when = new Date().toLocaleString();
+  if(!d.cs.length){
+    $("#reportBody").innerHTML = emptyState("Nothing to report yet",
+      "Once you've generated and planted canaries, this page summarizes how many are in play and whether any have been triggered.",
+      "generate","✦ Generate a canary");
+    return;
+  }
+  const catRows = Object.entries(d.byCat).map(([k,n])=>
+    `<div class="bd"><div class="k">${esc(CATEGORIES[k]?.label||k)}</div><div class="val">${n}</div></div>`).join("");
+  const audRows = Object.entries(d.byAud).sort((a,b)=>b[1]-a[1]).map(([k,n])=>
+    `<div class="bd"><div class="k">${esc(k)}</div><div class="val">${n}</div></div>`).join("");
+  const rows = d.cs.map(c=>{
+    const s3=(c.s3_hits||[]).length, pr=(c.probe_hits||[]).length;
+    return `<tr>
+      <td>${esc(c.codename)}</td>
+      <td>${esc(CATEGORIES[c.category]?.label||c.category)}</td>
+      <td>${esc(c.status)}</td>
+      <td class="num">${(c.variants||[]).length}</td>
+      <td class="num">${(c.plants||[]).length}</td>
+      <td class="num ${s3?'hit':''}">${s3}</td>
+      <td class="num ${pr?'hit':''}">${pr}</td>
+      <td>${esc((c.created||'').slice(0,10))}</td>
+    </tr>`;
+  }).join("");
+
+  $("#reportBody").innerHTML = `
+    <div class="report-head">
+      <h3>Canary activity report${co?` — ${esc(co)}`:""}</h3>
+      <div class="meta">Generated ${esc(when)} · all figures from this browser's saved data</div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat s-total"><div class="n">${d.cs.length}</div><div class="l">Canaries created</div></div>
+      <div class="stat s-planted"><div class="n">${d.plantedCount}</div><div class="l">Planted</div></div>
+      <div class="stat s-triggered ${d.byStatus.triggered?'alert':''}"><div class="n">${d.byStatus.triggered}</div><div class="l">Triggered</div></div>
+      <div class="stat s-hits ${(d.s3+d.probe)?'alert':''}"><div class="n">${d.s3+d.probe}</div><div class="l">Detections</div></div>
+    </div>
+
+    <div class="report-h">Status breakdown</div>
+    <div class="breakdown">
+      <div class="bd"><div class="k">Created (not yet planted)</div><div class="val">${d.byStatus.created}</div></div>
+      <div class="bd"><div class="k">Planted</div><div class="val">${d.byStatus.planted}</div></div>
+      <div class="bd"><div class="k">Triggered</div><div class="val">${d.byStatus.triggered}</div></div>
+      <div class="bd"><div class="k">Retired</div><div class="val">${d.byStatus.retired}</div></div>
+      <div class="bd"><div class="k">Variants issued</div><div class="val">${d.variants}</div></div>
+      <div class="bd"><div class="k">Plant locations</div><div class="val">${d.plants}</div></div>
+      <div class="bd"><div class="k">S3 honeytoken hits</div><div class="val">${d.s3}</div></div>
+      <div class="bd"><div class="k">Public-AI probe hits</div><div class="val">${d.probe}</div></div>
+    </div>
+
+    <div class="report-h">By category</div>
+    <div class="breakdown">${catRows}</div>
+
+    <div class="report-h">Variants by team / audience</div>
+    <div class="breakdown">${audRows}</div>
+
+    <div class="report-h">Every canary</div>
+    <div class="rtable-wrap"><table class="rtable">
+      <thead><tr>
+        <th>Codename</th><th>Category</th><th>Status</th>
+        <th style="text-align:right;">Variants</th><th style="text-align:right;">Plants</th>
+        <th style="text-align:right;">S3 hits</th><th style="text-align:right;">Probe hits</th><th>Created</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+
+    <div class="report-note">Detections are recorded from AWS honeytoken alerts and public-AI probe scans logged in this console. A "triggered" canary has had at least one detection.</div>
+  `;
+}
+function downloadReportCsv(){
+  const d = reportData();
+  const head = ["canary_id","codename","category","status","variants","plants","s3_hits","probe_hits","created","s3_url"];
+  const esc = s => `"${String(s==null?"":s).replace(/"/g,'""')}"`;
+  const lines = [head.join(",")];
+  d.cs.forEach(c=>{
+    lines.push([c.canary_id||c.id, c.codename, c.category, c.status,
+      (c.variants||[]).length, (c.plants||[]).length, (c.s3_hits||[]).length,
+      (c.probe_hits||[]).length, (c.created||"").slice(0,10), c.s3_url||""
+    ].map(esc).join(","));
+  });
+  const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `canary-report-${todayStr()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href); toast("CSV downloaded");
+}
+
 /* =========================================================================
    Actions
    ========================================================================= */
@@ -1161,6 +1310,7 @@ function refreshAll(){
   fillCanarySelect("#s3Canary");
   fillCanarySelect("#detectCanary"); renderProbePrompts();
   renderCli();
+  renderReport();
   // tab counts
   const active = STATE.canaries.filter(c=>c.status!=="retired").length;
   const trig = STATE.canaries.filter(c=>c.status==="triggered").length;
@@ -1261,6 +1411,10 @@ function init(){
   // detect
   $("#detectCanary").addEventListener("change", renderProbePrompts);
   $("#btnScan").addEventListener("click", scanForLeak);
+
+  // report
+  $("#btnPrintReport").addEventListener("click", ()=>{ renderReport(); window.print(); });
+  $("#btnCsvReport").addEventListener("click", downloadReportCsv);
   $("#btnParseS3").addEventListener("click", parseS3Json);
   $("#btnRecordS3").addEventListener("click", recordS3);
 
