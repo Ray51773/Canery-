@@ -272,6 +272,14 @@
   .match-result.hit .mr-head{color:var(--triggered);}
   .match-result.clean .mr-head{color:var(--ok);}
 
+  .probe-prompt{
+    display:flex; align-items:center; gap:12px; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:var(--radius-sm); padding:11px 12px 11px 14px; margin-bottom:8px;
+  }
+  .probe-prompt .q{flex:1; min-width:0; font-size:14px; color:var(--text);}
+  .probe-prompt .btn{flex-shrink:0;}
+  .probe-empty{color:var(--muted-2); font-size:13px; padding:4px 0;}
+
   .toast{
     position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px);
     background:var(--text); color:var(--bg); padding:11px 18px; border-radius:999px; font-size:13px; font-weight:600;
@@ -449,13 +457,28 @@
 
     <div class="panel">
       <h3>A · Did a public AI leak a canary?</h3>
-      <p class="panel-lead">Ask a public AI tool (ChatGPT, Copilot, Gemini…) a question <em>around</em> your fake fact — never the fact itself — then paste its full answer here. We'll scan it against every active canary's unique markers, even if the wording changed, and tell you which variant (and team) it matches.</p>
+      <p class="panel-lead">You don't have to think up the question — the console writes it for you. Pick a canary, copy one of the suggested prompts into a public AI tool (ChatGPT, Copilot, Gemini…), then paste the answer back. We scan it against every active canary's unique markers, even if the wording changed, and tell you which variant (and team) it matches.</p>
+
       <div class="field">
-        <label class="field-label" for="detectTool">Which tool did you ask?</label>
+        <label class="field-label" for="detectCanary">1 · Which canary are you testing?</label>
+        <select id="detectCanary"></select>
+      </div>
+
+      <div class="field">
+        <label class="field-label">2 · Ask a public AI one of these questions</label>
+        <div id="probePrompts"></div>
+        <div class="warn-box" style="margin:10px 0 0;">
+          <strong>Never paste the fake fact or its marker into the AI.</strong>
+          These questions deliberately ask <em>around</em> the fact. Typing the marker in yourself would plant it in the tool — a leak you caused. Always ask adjacent questions only.
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="detectTool">3 · Which tool did you ask?</label>
         <input type="text" id="detectTool" placeholder="e.g. Copilot (free), ChatGPT" style="max-width:320px;">
       </div>
       <div class="field">
-        <label class="field-label" for="detectText">Paste the AI's response</label>
+        <label class="field-label" for="detectText">4 · Paste the AI's full answer</label>
         <textarea id="detectText" placeholder="Paste exactly what the AI said…"></textarea>
       </div>
       <button class="btn" id="btnScan">⌕ Scan against my canaries</button>
@@ -935,6 +958,26 @@ function recordPlant(){
   $("#plantLocation").value="";
   refreshAll();
 }
+function inversePromptsFor(canary){
+  // The adjacent questions to ask a public AI - filled with the canary's
+  // quarter, and deliberately never containing the codename or any marker.
+  const cat = CATEGORIES[canary.category];
+  if(!cat) return [];
+  return (cat.inverse || []).map(q => fill(q, {quarter: canary.quarter}));
+}
+function renderProbePrompts(){
+  const box = $("#probePrompts");
+  const c = currentCanary($("#detectCanary").value);
+  if(!c){ box.innerHTML = `<div class="probe-empty">Save a canary first, then suggested questions appear here.</div>`; return; }
+  const prompts = inversePromptsFor(c);
+  if(!prompts.length){ box.innerHTML = `<div class="probe-empty">No suggested question for this category.</div>`; return; }
+  box.innerHTML = prompts.map(q => `
+    <div class="probe-prompt">
+      <span class="q">${esc(q)}</span>
+      <button class="btn small secondary" data-copytext="${esc(q)}">⧉ Copy</button>
+    </div>`).join("");
+}
+
 function scanForLeak(){
   const text = $("#detectText").value;
   const tool = $("#detectTool").value.trim() || "public AI";
@@ -1030,6 +1073,7 @@ function refreshAll(){
   renderOverview();
   fillCanarySelect("#plantCanary"); refreshPlantVariants();
   fillCanarySelect("#s3Canary");
+  fillCanarySelect("#detectCanary"); renderProbePrompts();
   renderCli();
   // tab counts
   const active = STATE.canaries.filter(c=>c.status!=="retired").length;
@@ -1095,6 +1139,7 @@ function init(){
   $("#btnRecordPlant").addEventListener("click", recordPlant);
 
   // detect
+  $("#detectCanary").addEventListener("change", renderProbePrompts);
   $("#btnScan").addEventListener("click", scanForLeak);
   $("#btnParseS3").addEventListener("click", parseS3Json);
   $("#btnRecordS3").addEventListener("click", recordS3);
@@ -1108,6 +1153,8 @@ function init(){
   document.addEventListener("click", e=>{
     const copyBtn = e.target.closest("[data-copy]");
     if(copyBtn){ const el=$(copyBtn.dataset.copy); if(el){ navigator.clipboard.writeText(el.textContent).then(()=>toast("Copied to clipboard")); } return; }
+    const copyText = e.target.closest("[data-copytext]");
+    if(copyText){ navigator.clipboard.writeText(copyText.dataset.copytext).then(()=>toast("Prompt copied — paste it into the AI tool")); return; }
     const goto = e.target.closest("[data-goto]"); if(goto){ switchTab(goto.dataset.goto); return; }
     const act = e.target.closest("[data-act]");
     if(act){ const id=act.dataset.id; if(act.dataset.act==="retire") retireCanary(id); if(act.dataset.act==="delete") deleteCanary(id); return; }
