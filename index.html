@@ -276,6 +276,10 @@
   .report-head{border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); padding:18px 20px; margin-bottom:16px; box-shadow:var(--shadow);}
   .report-head h3{font-size:20px; margin:0 0 2px; text-transform:none; letter-spacing:-.01em; color:var(--text);}
   .report-head .meta{color:var(--muted); font-size:13px;}
+  .report-summary{display:flex; align-items:flex-start; gap:12px; background:var(--brand-light); border:1px solid color-mix(in srgb,var(--brand) 30%, transparent); border-radius:var(--radius); padding:14px 16px; margin-bottom:16px;}
+  .report-summary .txt{flex:1; min-width:0; font-size:14.5px; line-height:1.5;}
+  .report-summary.alert{background:var(--triggered-bg); border-color:var(--triggered);}
+  .report-summary .btn{flex-shrink:0;}
   .report-h{font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:22px 0 10px; font-weight:700;}
   .breakdown{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;}
   .breakdown .bd{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 13px; box-shadow:var(--shadow);}
@@ -641,6 +645,13 @@ python3 -m canary status              # full correlation report</pre>
     <div class="row-between" style="margin-bottom:4px;">
       <div class="section-title"><h2>Activity report</h2></div>
       <div class="btn-row no-print">
+        <select id="reportRange" title="Filter by when the canary was created" style="width:auto; padding:7px 10px;">
+          <option value="all">All time</option>
+          <option value="month">This month</option>
+          <option value="30d">Last 30 days</option>
+          <option value="quarter">This quarter</option>
+          <option value="year">This year</option>
+        </select>
         <button class="btn secondary small" id="btnPrintReport">🖨 Print / Save PDF</button>
         <button class="btn secondary small" id="btnCsvReport">⤓ Download CSV</button>
       </div>
@@ -1008,8 +1019,24 @@ function renderCli(){
 }
 
 /* ---------- Report ---------- */
-function reportData(){
-  const cs = STATE.canaries;
+function rangeStart(range){
+  const now = new Date();
+  if(range==="month") return new Date(now.getFullYear(), now.getMonth(), 1);
+  if(range==="30d"){ const d=new Date(now); d.setDate(d.getDate()-30); return d; }
+  if(range==="quarter") return new Date(now.getFullYear(), Math.floor(now.getMonth()/3)*3, 1);
+  if(range==="year") return new Date(now.getFullYear(), 0, 1);
+  return null; // all time
+}
+function detectionEvents(c){
+  // Unified list of this canary's detections with a Date and a human type.
+  const out = [];
+  (c.s3_hits||[]).forEach(h=> out.push({when:new Date(h.event_time||h.at||0), type:"AWS honeytoken"}));
+  (c.probe_hits||[]).forEach(h=> out.push({when:new Date(h.at||0), type:"public-AI probe"}));
+  return out.filter(e=> !isNaN(e.when));
+}
+function reportData(range){
+  const start = rangeStart(range);
+  const cs = STATE.canaries.filter(c=> !start || new Date(c.created||0) >= start);
   const byStatus = {created:0, planted:0, triggered:0, retired:0};
   const byCat = {}, byAud = {};
   let variants=0, plants=0, s3=0, probe=0;
@@ -1021,17 +1048,43 @@ function reportData(){
     s3 += (c.s3_hits||[]).length;
     probe += (c.probe_hits||[]).length;
   });
+  // Most recent detection across the filtered canaries.
+  let last = null;
+  cs.forEach(c=> detectionEvents(c).forEach(e=>{ if(!last || e.when > last.when) last = e; }));
   return { cs, byStatus, byCat, byAud, variants, plants, s3, probe,
-           plantedCount: byStatus.planted + byStatus.triggered };
+           plantedCount: byStatus.planted + byStatus.triggered, lastDetection: last };
+}
+const RANGE_LABEL = {all:"all time", month:"this month", "30d":"the last 30 days", quarter:"this quarter", year:"this year"};
+function reportSummary(d, range){
+  const n = d.cs.length;
+  if(!n) return { text:`No canaries created in ${RANGE_LABEL[range]||"this period"}.`, alert:false };
+  const bits = [`${n} canar${n===1?"y":"ies"} created`];
+  if(d.plantedCount) bits.push(`${d.plantedCount} planted`);
+  if(d.byStatus.triggered) bits.push(`${d.byStatus.triggered} triggered`);
+  let text = bits.join(", ") + ` (${RANGE_LABEL[range]||"all time"}).`;
+  if(d.lastDetection){
+    const dt = d.lastDetection.when.toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"});
+    text += ` Most recent detection ${dt} via ${d.lastDetection.type}.`;
+  } else {
+    text += ` No detections recorded.`;
+  }
+  return { text, alert: d.byStatus.triggered>0 };
 }
 function renderReport(){
-  const d = reportData();
+  const range = ($("#reportRange") && $("#reportRange").value) || "all";
+  const d = reportData(range);
   const co = companyName("");
   const when = new Date().toLocaleString();
-  if(!d.cs.length){
+  if(!STATE.canaries.length){
     $("#reportBody").innerHTML = emptyState("Nothing to report yet",
       "Once you've generated and planted canaries, this page summarizes how many are in play and whether any have been triggered.",
       "generate","✦ Generate a canary");
+    return;
+  }
+  const summary = reportSummary(d, range);
+  if(!d.cs.length){
+    $("#reportBody").innerHTML = `<div class="report-summary"><div class="txt">${esc(summary.text)}</div></div>
+      <div class="report-note">No canaries were created in ${esc(RANGE_LABEL[range]||"this period")}. Pick a wider range above.</div>`;
     return;
   }
   const catRows = Object.entries(d.byCat).map(([k,n])=>
@@ -1055,7 +1108,12 @@ function renderReport(){
   $("#reportBody").innerHTML = `
     <div class="report-head">
       <h3>Canary activity report${co?` — ${esc(co)}`:""}</h3>
-      <div class="meta">Generated ${esc(when)} · all figures from this browser's saved data</div>
+      <div class="meta">Generated ${esc(when)} · range: ${esc(RANGE_LABEL[range]||"all time")} · all figures from this browser's saved data</div>
+    </div>
+
+    <div class="report-summary ${summary.alert?'alert':''}">
+      <div class="txt">${esc(summary.text)}</div>
+      <button class="btn small secondary no-print" data-copytext="${esc(summary.text)}">⧉ Copy</button>
     </div>
 
     <div class="stat-row">
@@ -1097,7 +1155,7 @@ function renderReport(){
   `;
 }
 function downloadReportCsv(){
-  const d = reportData();
+  const d = reportData(($("#reportRange") && $("#reportRange").value) || "all");
   const head = ["canary_id","codename","category","status","variants","plants","s3_hits","probe_hits","created","s3_url"];
   const esc = s => `"${String(s==null?"":s).replace(/"/g,'""')}"`;
   const lines = [head.join(",")];
@@ -1415,6 +1473,7 @@ function init(){
   // report
   $("#btnPrintReport").addEventListener("click", ()=>{ renderReport(); window.print(); });
   $("#btnCsvReport").addEventListener("click", downloadReportCsv);
+  $("#reportRange").addEventListener("change", renderReport);
   $("#btnParseS3").addEventListener("click", parseS3Json);
   $("#btnRecordS3").addEventListener("click", recordS3);
 
