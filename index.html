@@ -365,7 +365,16 @@
           <input type="text" id="companyAliases" placeholder="ticker, brand, short name">
         </div>
       </div>
-      <div class="field-hint">This is used to phrase the leak-detection questions on the “Detect a leak” tab. It's never placed inside a canary's unique marker.</div>
+      <div class="field">
+        <label class="field-label" for="companyContext">Known for <span style="text-transform:none; font-weight:500;">(optional — sharpens the questions)</span></label>
+        <input type="text" id="companyContext" placeholder="products, topics or people the firm is publicly known for — e.g. payments APIs, the Vault product, CEO Jane Roe">
+      </div>
+      <div class="field" style="margin-bottom:6px;">
+        <label class="field-label" for="companyCustomProbes">Your own probe questions <span style="text-transform:none; font-weight:500;">(optional)</span></label>
+        <textarea id="companyCustomProbes" style="min-height:70px;" placeholder="One question per line. Use {company} and {quarter} — they get filled in.&#10;e.g. What has {company} announced about payments recently?&#10;e.g. Any {quarter} product news from {company}?"></textarea>
+        <div class="field-hint">These are added to the suggested questions on “Detect a leak”. Keep them <em>adjacent</em> — never write the fake fact or its marker into a question.</div>
+      </div>
+      <div class="field-hint">Everything here is used only to phrase the leak-detection questions (and the planted note's heading). None of it is ever placed inside a canary's unique marker.</div>
     </div>
 
     <div class="grid-2">
@@ -716,7 +725,8 @@ function load(){
   let s = { canaries: [] };
   try{ const raw = localStorage.getItem(LS_KEY); if(raw) s = JSON.parse(raw); }catch(e){}
   if(!Array.isArray(s.canaries)) s.canaries = [];
-  if(!s.company || typeof s.company !== "object") s.company = { name:"", sector:"", aliases:"" };
+  if(!s.company || typeof s.company !== "object") s.company = {};
+  s.company = Object.assign({ name:"", sector:"", aliases:"", context:"", customProbes:"" }, s.company);
   return s;
 }
 function companyName(fallback){ return (STATE.company && STATE.company.name || "").trim() || (fallback||""); }
@@ -993,7 +1003,23 @@ function inversePromptsFor(canary){
   const cat = CATEGORIES[canary.category];
   if(!cat) return [];
   const company = companyName("your company");
-  return (cat.inverse || []).map(q => fill(q, {quarter: canary.quarter, company}));
+  const v = {quarter: canary.quarter, company};
+  const out = (cat.inverse || []).map(q => fill(q, v));
+
+  // Sharper questions when the user has said what the company is known for.
+  const ctx = (STATE.company.context || "").trim();
+  if(ctx){
+    out.push(fill("What has {company} announced or shared publicly about {context}?", Object.assign({context:ctx}, v)));
+    out.push(fill("Any recent {quarter} news from {company} regarding {context}?", Object.assign({context:ctx}, v)));
+  }
+
+  // The user's own questions ({company}/{quarter} placeholders supported).
+  (STATE.company.customProbes || "").split("\n").map(s=>s.trim()).filter(Boolean).forEach(q=>{
+    out.push(fill(q, v));
+  });
+
+  // De-duplicate while preserving order.
+  return out.filter((q,i)=> q && out.indexOf(q)===i);
 }
 function renderProbePrompts(){
   const box = $("#probePrompts");
@@ -1005,11 +1031,12 @@ function renderProbePrompts(){
   const banner = name
     ? `<div class="probe-empty" style="margin-bottom:8px;">Questions target <b style="color:var(--text)">${esc(name)}</b>. Change it on the <a href="#" data-goto="generate">Generate tab</a>.</div>`
     : `<div class="probe-empty" style="margin-bottom:8px;">⚠ No company name set — questions say “your company”. Add it on the <a href="#" data-goto="generate">Generate tab</a> so the AI knows who you mean.</div>`;
+  const schedule = `<div class="probe-empty" style="margin-top:8px;">Ask each question in a <b style="color:var(--text)">fresh chat</b> (no shared history). One quiet answer proves little — about <b style="color:var(--text)">9 probes</b> gives ~95% confidence if a leak would surface roughly 1-in-3 times. <a href="the-maths.html" target="_blank" rel="noopener">Why →</a></div>`;
   box.innerHTML = banner + prompts.map(q => `
     <div class="probe-prompt">
       <span class="q">${esc(q)}</span>
       <button class="btn small secondary" data-copytext="${esc(q)}">⧉ Copy</button>
-    </div>`).join("");
+    </div>`).join("") + schedule;
 }
 
 function scanForLeak(){
@@ -1130,6 +1157,8 @@ function loadCompanyFields(){
   $("#companyName").value = STATE.company.name || "";
   $("#companySector").value = STATE.company.sector || "";
   $("#companyAliases").value = STATE.company.aliases || "";
+  $("#companyContext").value = STATE.company.context || "";
+  $("#companyCustomProbes").value = STATE.company.customProbes || "";
   updateCompanyStatus();
 }
 function saveCompany(){
@@ -1137,6 +1166,8 @@ function saveCompany(){
     name: $("#companyName").value.trim(),
     sector: $("#companySector").value.trim(),
     aliases: $("#companyAliases").value.trim(),
+    context: $("#companyContext").value.trim(),
+    customProbes: $("#companyCustomProbes").value,
   };
   save();
   updateCompanyStatus();
@@ -1172,7 +1203,7 @@ function init(){
 
   // company profile
   loadCompanyFields();
-  ["#companyName","#companySector","#companyAliases"].forEach(s=> $(s).addEventListener("input", saveCompany));
+  ["#companyName","#companySector","#companyAliases","#companyContext","#companyCustomProbes"].forEach(s=> $(s).addEventListener("input", saveCompany));
 
   $("#plantDate").value = todayStr();
 
