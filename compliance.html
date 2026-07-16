@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compliance mapping — Canary Console</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --panel-2:#fafbfd;
+    --border:#e2e6ee; --text:#1a1f2b; --muted:#5c6472; --muted-2:#8790a0;
+    --brand:#2454ff; --brand-dark:#173bb0; --brand-light:#eaf0ff;
+    --canary:#d99413; --canary-bg:#fdf3df; --canary-border:#f0d999;
+    --strong:#1a9e5b; --strong-bg:#e7f7ee;
+    --support:#2454ff; --support-bg:#eaf0ff;
+    --stretch:#8790a0; --stretch-bg:#eef0f3;
+    --code-bg:#f5f7fb;
+    --radius:14px; --radius-sm:9px;
+    --shadow:0 1px 2px rgba(20,25,40,.05), 0 8px 26px rgba(20,25,40,.06);
+    --mono:"SF Mono",SFMono-Regular,ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --measure:68ch;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1420; --panel:#171d2b; --panel-2:#1c2333;
+      --border:#28303f; --text:#e6e9f0; --muted:#9aa4b8; --muted-2:#6b7488;
+      --brand:#5b82ff; --brand-dark:#3a5fe0; --brand-light:#1b2542;
+      --canary:#f0b53f; --canary-bg:#2a2312; --canary-border:#4a3d16;
+      --strong:#3ec77e; --strong-bg:#12291d;
+      --support:#5b82ff; --support-bg:#1b2542;
+      --stretch:#8790a0; --stretch-bg:#232b3b;
+      --code-bg:#111726;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1420; --panel:#171d2b; --panel-2:#1c2333;
+    --border:#28303f; --text:#e6e9f0; --muted:#9aa4b8; --muted-2:#6b7488;
+    --brand:#5b82ff; --brand-dark:#3a5fe0; --brand-light:#1b2542;
+    --canary:#f0b53f; --canary-bg:#2a2312; --canary-border:#4a3d16;
+    --strong:#3ec77e; --strong-bg:#12291d;
+    --support:#5b82ff; --support-bg:#1b2542;
+    --stretch:#8790a0; --stretch-bg:#232b3b;
+    --code-bg:#111726;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f6f9; --panel:#ffffff; --panel-2:#fafbfd;
+    --border:#e2e6ee; --text:#1a1f2b; --muted:#5c6472; --muted-2:#8790a0;
+    --brand:#2454ff; --brand-dark:#173bb0; --brand-light:#eaf0ff;
+    --canary:#d99413; --canary-bg:#fdf3df; --canary-border:#f0d999;
+    --strong:#1a9e5b; --strong-bg:#e7f7ee;
+    --support:#2454ff; --support-bg:#eaf0ff;
+    --stretch:#8790a0; --stretch-bg:#eef0f3;
+    --code-bg:#f5f7fb;
+    --shadow:0 1px 2px rgba(20,25,40,.05), 0 8px 26px rgba(20,25,40,.06);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto;} }
+  body{margin:0; font-family:var(--sans); background:var(--bg); color:var(--text); line-height:1.6; font-size:16px; -webkit-font-smoothing:antialiased;}
+  h1,h2,h3{letter-spacing:-.01em; line-height:1.2; text-wrap:balance; margin:0;}
+  p{margin:0;}
+  code{font-family:var(--mono); font-size:.9em; background:var(--code-bg); padding:1px 5px; border-radius:5px;}
+  a{color:var(--brand);}
+
+  .theme-toggle{position:fixed; top:16px; right:16px; z-index:20; background:var(--panel); border:1px solid var(--border); color:var(--muted); border-radius:999px; padding:7px 14px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; box-shadow:var(--shadow);}
+  .theme-toggle:hover{color:var(--text);}
+
+  .wrap{max-width:960px; margin:0 auto; padding:0 22px;}
+  .backlink{display:inline-flex; align-items:center; gap:6px; font-size:13.5px; font-weight:600; color:var(--muted); text-decoration:none; margin-top:26px;}
+  .backlink:hover{color:var(--text);}
+
+  header.hero{padding:22px 0 8px;}
+  .eyebrow{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.12em; color:var(--canary); margin:22px 0 12px;}
+  header.hero h1{font-size:clamp(26px,5vw,38px); font-weight:750;}
+  header.hero .lede{font-size:clamp(16px,2.4vw,18px); color:var(--muted); margin-top:14px; max-width:var(--measure);}
+
+  main{padding:18px 0 10px;}
+
+  .callout{border-radius:var(--radius); padding:16px 18px; margin:16px 0; font-size:14.5px; line-height:1.55;}
+  .callout.warn{background:var(--canary-bg); border:1px solid var(--canary-border);}
+  .callout.warn strong{color:var(--canary);}
+  .callout.info{background:var(--brand-light); border:1px solid color-mix(in srgb,var(--brand) 30%, transparent);}
+  .callout.angle{background:var(--panel-2); border:1px solid var(--border); font-size:13.5px;}
+  .callout.angle b{color:var(--brand-dark);}
+  :root[data-theme="dark"] .callout.angle b{color:var(--brand);}
+
+  /* claim-strength key */
+  .key{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:14px 0 4px;}
+  @media (max-width:680px){ .key{grid-template-columns:1fr;} }
+  .key .k{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; box-shadow:var(--shadow);}
+  .key .k .lbl{font-size:14px; font-weight:700; margin-bottom:4px;}
+  .key .k p{font-size:12.5px; color:var(--muted);}
+
+  .badge{display:inline-block; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; padding:3px 9px; border-radius:999px; white-space:nowrap;}
+  .badge.strong{color:var(--strong); background:var(--strong-bg);}
+  .badge.support{color:var(--support); background:var(--support-bg);}
+  .badge.stretch{color:var(--stretch); background:var(--stretch-bg);}
+  .key .k.strong .lbl{color:var(--strong);}
+  .key .k.support .lbl{color:var(--support);}
+  .key .k.stretch .lbl{color:var(--stretch);}
+
+  .fw{display:flex; align-items:baseline; gap:10px; margin:32px 0 8px; flex-wrap:wrap;}
+  .fw .fwbadge{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:3px 9px; border-radius:6px; background:var(--brand-light); color:var(--brand-dark);}
+  :root[data-theme="dark"] .fw .fwbadge{color:var(--brand);}
+  .fw h3{font-size:18px; font-weight:720;}
+  .fw .scope{font-size:12.5px; color:var(--muted-2);}
+
+  .tbl-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:8px;}
+  table{width:100%; border-collapse:collapse; font-size:13px; background:var(--panel); min-width:720px;}
+  th,td{padding:10px 13px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top;}
+  th{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:var(--panel-2);}
+  tr:last-child td{border-bottom:none;}
+  td.ctrl{white-space:nowrap; font-weight:700;}
+  td.ctrl .mono{font-family:var(--mono); font-size:12px; color:var(--brand); display:block; font-weight:400; margin-top:2px;}
+  td.art{white-space:nowrap; font-weight:700; color:var(--brand); font-family:var(--mono); font-size:12.5px;}
+  td.ev{color:var(--muted); font-size:12.5px;}
+  td.str{white-space:nowrap;}
+
+  h2.section-h{font-size:clamp(20px,3.5vw,26px); font-weight:720; margin:34px 0 4px;}
+  .section-sub{color:var(--muted); font-size:15px; margin-bottom:12px; max-width:var(--measure);}
+
+  .notlist{list-style:none; padding:0; margin:8px 0 0;}
+  .notlist li{position:relative; padding-left:26px; margin-bottom:11px; font-size:14.5px; max-width:var(--measure);}
+  .notlist li::before{content:"!"; position:absolute; left:0; top:-1px; width:18px; height:18px; border-radius:50%; background:var(--canary-bg); color:var(--canary); font-weight:800; font-size:12px; text-align:center; line-height:18px;}
+  .notlist li b{color:var(--text);}
+
+  footer{border-top:1px solid var(--border); margin-top:30px; padding:26px 0 60px; text-align:center; color:var(--muted-2); font-size:13px;}
+  .footlinks{display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-bottom:12px;}
+  .footlinks a{color:var(--brand); text-decoration:none; font-weight:640;}
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeBtn">◑ Theme</button>
+
+<div class="wrap">
+  <a class="backlink" href="how-it-works.html">← How it works</a>
+
+  <header class="hero">
+    <div class="eyebrow">AI Data-Leakage Canary System</div>
+    <h1>Compliance mapping</h1>
+    <p class="lede">Canary-based detection of proprietary-data leakage through AI channels, mapped to the frameworks an auditor, regulator, or underwriter will ask about. Every row is rated for how hard you can lean on it.</p>
+  </header>
+
+  <main>
+    <div class="callout warn">
+      <strong>Read this first.</strong> No control here makes anyone "compliant". A canary is one <em>detective</em> control that helps <em>evidence</em> specific clauses. Frameworks are outcome-based and mandate no particular tool. Nothing on this page is certification or legal advice — confirm every mapping with your DPO, compliance function and legal counsel against the current text of each standard and your own risk assessment.
+    </div>
+
+    <h2 class="section-h">Claim-strength key</h2>
+    <p class="section-sub">Read the badge before you use a row. It tells you how far the claim will carry.</p>
+    <div class="key">
+      <div class="k strong"><div class="lbl">Strong</div><p>The control directly satisfies or evidences the clause — defensible in front of an auditor or regulator.</p></div>
+      <div class="k support"><div class="lbl">Supporting</div><p>A meaningful contribution as one control among several — strengthens the narrative.</p></div>
+      <div class="k stretch"><div class="lbl">Stretch</div><p>Plausible in a sales deck. Do not lead with it in an audit.</p></div>
+    </div>
+
+    <!-- GDPR -->
+    <div class="fw"><span class="fwbadge">GDPR</span><h3>EU General Data Protection Regulation</h3></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Clause</th><th>Requirement</th><th>How the canary system evidences it</th><th>Evidence artefact</th><th>Strength</th></tr></thead>
+      <tbody>
+        <tr><td class="art">Art 5(1)(f)</td><td>Integrity &amp; confidentiality — data protected against unauthorised processing.</td><td>Continuous verification that personal data has not leaked into external AI systems.</td><td class="ev">Probe schedule, negative-result logs</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 32(1)(b)</td><td>Ensure ongoing confidentiality of processing systems.</td><td>Canary layer detects confidentiality failures across AI channels that conventional DLP misses.</td><td class="ev">Honeytoken deployment register, alert history</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 32(1)(d)</td><td>Process for regularly testing, assessing and evaluating effectiveness of security measures.</td><td>The probing cycle is a regular testing process, scheduled and logged.</td><td class="ev">Test cadence config, per-cycle results, trend reporting</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="art">Art 33</td><td>Breach notification within 72h of becoming aware.</td><td>A detection is a timestamped awareness event — converts an unknown-duration leak into a defined clock-start with evidence.</td><td class="ev">Alert timestamp, correlation record, incident ticket</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="art">Art 34</td><td>Communication to data subjects for high-risk breaches.</td><td>Canary variant tracking identifies which dataset leaked, scoping who is affected.</td><td class="ev">Variant-to-dataset mapping</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 35</td><td>DPIA for high-risk processing.</td><td>Detection capability is a documented mitigation in any DPIA covering AI tooling.</td><td class="ev">DPIA mitigation entry</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout angle"><b>Regulator angle.</b> ICO penalty guidance treats detection and mitigation capability as a mitigating factor. The counterfactual question in any AI-mediated breach is "what capability did you have to detect this?" — most organisations answer: none.</div>
+
+    <!-- EU AI Act -->
+    <div class="fw"><span class="fwbadge">EU AI Act</span><h3>Regulation (EU) 2024/1689</h3></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Clause</th><th>Requirement</th><th>How the canary system evidences it</th><th>Evidence artefact</th><th>Strength</th></tr></thead>
+      <tbody>
+        <tr><td class="art">Art 26</td><td>Deployer obligations — monitor operation of high-risk AI systems.</td><td>Operational monitoring of data flows into and out of AI systems in use.</td><td class="ev">Monitoring logs per AI system in scope</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="art">Art 72</td><td>Post-market monitoring (providers).</td><td>For AI providers, canary probing forms part of the post-market monitoring plan.</td><td class="ev">PMM plan section, probe results</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 9</td><td>Risk-management system (providers of high-risk systems).</td><td>Data leakage via training ingestion is an identified risk with an active detection control.</td><td class="ev">Risk register entry with linked control</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 10</td><td>Data governance for training/validation data.</td><td>Demonstrates active boundary control over what enters training pipelines (yours or third parties').</td><td class="ev">Canary placement policy</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 15</td><td>Accuracy, robustness and cybersecurity of high-risk systems.</td><td>Membership-inference probing doubles as a cybersecurity test of model data boundaries.</td><td class="ev">Probe methodology doc</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 4</td><td>AI literacy.</td><td>The programme demonstrates organisational understanding of AI data-flow risk beyond policy paperwork.</td><td class="ev">Programme documentation, training material</td><td class="str"><span class="badge stretch">Stretch</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- ISO 42001 -->
+    <div class="fw"><span class="fwbadge">ISO/IEC 42001</span><h3>AI management system (AIMS)</h3><span class="scope">the strongest audit story — most AIMS evidence is documentary; this is operational</span></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Control</th><th>Requirement</th><th>How the canary system evidences it</th><th>Evidence artefact</th><th>Strength</th></tr></thead>
+      <tbody>
+        <tr><td class="ctrl">A.5.2</td><td>AI system impact-assessment process.</td><td>Leak-detection results feed impact assessments with real data rather than assumptions.</td><td class="ev">Assessment inputs citing probe results</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="ctrl">A.6.2.6</td><td>AI system operation and monitoring.</td><td>Direct implementation: continuous monitoring of AI data boundaries in operation.</td><td class="ev">Live dashboard, alert logs, review minutes</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="ctrl">A.7.2 / A.7.4</td><td>Data for AI systems — acquisition, provenance, quality.</td><td>Canary variants provide provenance tracing: you can prove where a leaked fact originated.</td><td class="ev">Variant registry with placement records</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="ctrl">A.9.2</td><td>Processes for responsible use of AI.</td><td>Verifies the acceptable-use policy actually holds (staff not pasting sensitive data into public tools).</td><td class="ev">Detection events vs policy, trend data</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="ctrl">A.10.2 / A.10.3</td><td>Third-party and supplier AI relationships.</td><td>Probing external AI services tests whether suppliers/tools ingest your data beyond contract terms.</td><td class="ev">Per-vendor probe results</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout angle"><b>Auditor angle.</b> The gap between "documented" and "implemented and effective" is where 42001 certifications wobble. An instrumented canary programme with logs closes it.</div>
+
+    <!-- ISO 27001 -->
+    <div class="fw"><span class="fwbadge">ISO/IEC 27001:2022</span><h3>Annex A controls</h3></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Control</th><th>Requirement</th><th>How the canary system evidences it</th><th>Evidence artefact</th><th>Strength</th></tr></thead>
+      <tbody>
+        <tr><td class="ctrl">A.5.7</td><td>Threat intelligence.</td><td>Detections are first-party threat intel: confirmed evidence of an active exfiltration or ingestion path.</td><td class="ev">Intel reports derived from detections</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="ctrl">A.8.12</td><td>Data leakage prevention.</td><td>Extends DLP coverage to the AI channel — the current blind spot in every conventional DLP stack.</td><td class="ev">DLP architecture doc showing AI-channel coverage</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="ctrl">A.8.15</td><td>Logging.</td><td>S3 honeytoken access via CloudTrail/EventBridge produces tamper-evident access logs.</td><td class="ev">CloudTrail config, retention policy</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="ctrl">A.8.16</td><td>Monitoring activities.</td><td>Continuous automated monitoring with alerting on anomalous access.</td><td class="ev">EventBridge rules, alert routing</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="ctrl">A.5.24–A.5.27</td><td>Incident management (planning through lessons learned).</td><td>A detection is a well-formed incident trigger arriving with its own evidence pack.</td><td class="ev">Incident playbook keyed to canary alerts</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- NIST AI RMF -->
+    <div class="fw"><span class="fwbadge">NIST AI RMF</span><h3>AI Risk Management Framework 1.0</h3></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Function</th><th>Requirement</th><th>How the canary system evidences it</th><th>Strength</th></tr></thead>
+      <tbody>
+        <tr><td class="ctrl">MEASURE 2.7</td><td>AI system security and resilience evaluated.</td><td>Membership-inference probing is a direct security evaluation of data boundaries.</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="ctrl">MEASURE 2.10</td><td>Privacy risk examined and documented.</td><td>Detection of personal-data ingestion into external models.</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="ctrl">MANAGE 4.1</td><td>Post-deployment monitoring with response mechanisms.</td><td>Full loop: plant, probe, detect, alert, respond.</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="ctrl">GOVERN 4.3</td><td>Incident tracking and response for AI risks.</td><td>Detection-to-incident pipeline with correlation records.</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- DORA -->
+    <div class="fw"><span class="fwbadge">DORA</span><h3>Digital Operational Resilience Act</h3><span class="scope">financial entities in scope</span></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Article</th><th>Requirement</th><th>How the canary system evidences it</th><th>Strength</th></tr></thead>
+      <tbody>
+        <tr><td class="art">Art 10</td><td>Mechanisms to detect anomalous activities and potential ICT-related incidents.</td><td>Canary access and external-ingestion detection are anomaly detection by design.</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="art">Art 9</td><td>Protection and prevention — policies limiting data loss.</td><td>AI-channel DLP extension.</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 17</td><td>ICT-related incident-management process.</td><td>Structured detection-to-incident flow with evidence.</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Arts 24–26</td><td>Digital operational resilience testing, incl. threat-led testing.</td><td>Deception-based controls sit naturally within a TLPT programme; canaries can be scoped into red-team engagements.</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 28</td><td>ICT third-party risk management.</td><td>External AI providers ingesting firm data is third-party risk; probing is the test.</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- NIS2 -->
+    <div class="fw"><span class="fwbadge">NIS2</span><h3>Directive (EU) 2022/2555</h3><span class="scope">essential / important entities</span></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Article</th><th>Requirement</th><th>How the canary system evidences it</th><th>Strength</th></tr></thead>
+      <tbody>
+        <tr><td class="art">Art 21(2)(f)</td><td>Policies and procedures to assess the effectiveness of cybersecurity risk-management measures.</td><td>The probing cycle is an effectiveness assessment, scheduled and evidenced.</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+        <tr><td class="art">Art 21(2)(b)</td><td>Incident handling.</td><td>Detection trigger with a built-in evidence chain.</td><td class="str"><span class="badge support">Supporting</span></td></tr>
+        <tr><td class="art">Art 23</td><td>Incident reporting — early warning within 24h.</td><td>Same logic as GDPR Art 33: a detection starts a defined clock instead of an indefinite unknown.</td><td class="str"><span class="badge strong">Strong</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- Cyber insurance -->
+    <div class="fw"><span class="fwbadge">Cyber insurance</span><h3>Underwriting &amp; claims</h3></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Angle</th><th>How the canary system helps</th><th>What to show the underwriter</th></tr></thead>
+      <tbody>
+        <tr><td class="ctrl">Underwriting posture</td><td>Proposal forms now ask about DLP, monitoring and AI-usage controls. "Continuous canary-based leak detection across AI channels" is an answer almost no applicant can give.</td><td class="ev">One-page control summary, sample (redacted) dashboard</td></tr>
+        <tr><td class="ctrl">Premium / terms</td><td>Insurers price AI exposure blind. Demonstrable AI data governance supports better terms in a hard market (direct premium reduction is not yet standard).</td><td class="ev">Detection metrics: probe cadence, coverage, mean time to detect</td></tr>
+        <tr><td class="ctrl">Claims defence</td><td>Forensics asks when you knew and what you did. Timestamped detection + documented response protects against late-notification coverage disputes.</td><td class="ev">Alert-to-notification timeline from a tabletop or live event</td></tr>
+        <tr><td class="ctrl">AI exclusions</td><td>Insurers are bolting AI exclusions and sub-limits onto cyber policies. Evidence that AI exposure is managed and monitored is the negotiating counter.</td><td class="ev">Control mapping (this document), programme charter</td></tr>
+        <tr><td class="ctrl">Notification cost</td><td>Variant tracking scopes exactly which dataset leaked, narrowing notification populations and cost.</td><td class="ev">Variant-to-dataset mapping methodology</td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- Caveats -->
+    <h2 class="section-h">Honest caveats</h2>
+    <p class="section-sub">Keep these in the appendix, not the pitch — but never drop them.</p>
+    <ul class="notlist">
+      <li><b>No single control makes anyone compliant.</b> This is one control that evidences specific clauses. Never claim framework compliance outright.</li>
+      <li><b>Copilot probing carries ToS risk.</b> Automated probing of Microsoft's free tier likely breaches its terms of service. A production programme needs sanctioned APIs, the client's own tenant, or documented legal review — a compliance tool with a ToS violation in its core loop is a bad look in due diligence.</li>
+      <li><b>Internal authorisation is required.</b> Planting fabricated facts in internal systems needs written sign-off (risk of staff acting on false information, and of canaries being mistaken for data-quality incidents).</li>
+      <li><b>False-confidence risk.</b> A negative probe proves the canary wasn't surfaced, not that no data leaked. Word reports as "no evidence of ingestion detected", never "no leakage occurred".</li>
+      <li><b>Not relevant to</b> PCI DSS (cardholder-data flows are the wrong shape), SOX (financial-reporting controls), or Cyber Essentials (baseline technical controls only). Forcing these in undermines the credible claims.</li>
+    </ul>
+
+    <div class="callout info" style="margin-top:22px;">
+      <b>How to talk about it, safely.</b> "A detective control that helps us evidence monitoring, testing-effectiveness and breach-detection obligations across GDPR, the EU AI Act, ISO 42001/27001, NIST AI RMF, DORA and NIS2." Never "makes us compliant" or "required by …".
+    </div>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="footlinks">
+      <a href="how-it-works.html">← How it works</a>
+      <a href="the-maths.html">The maths behind it</a>
+      <a href="index.html">Open the Canary Console →</a>
+    </div>
+    Part of the AI Data-Leakage Canary System · a defensive security tool · indicative mapping, not legal advice
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var btn = document.getElementById("themeBtn");
+    try{ var s = localStorage.getItem("canary_theme"); if(s) document.documentElement.setAttribute("data-theme", s); }catch(e){}
+    btn.addEventListener("click", function(){
+      var cur = document.documentElement.getAttribute("data-theme");
+      var isDark = cur ? cur==="dark" : matchMedia("(prefers-color-scheme:dark)").matches;
+      var next = isDark ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try{ localStorage.setItem("canary_theme", next); }catch(e){}
+    });
+  })();
+</script>
+</body>
+</html>
