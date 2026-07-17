@@ -219,6 +219,48 @@ class Provisioner:
         log.info("EventBridge rule ready: %s", rule_name)
         return rule_arn
 
+    # -- EventBridge: Secrets Manager reads (deter mode) -----------------
+    def ensure_secretsmanager_eventbridge(self, lambda_arn: str) -> str:
+        """Route Secrets Manager read events (GetSecretValue) on decoy secrets
+        to the same alerter Lambda. GetSecretValue is a CloudTrail management
+        event, delivered to EventBridge as an 'AWS API Call via CloudTrail'
+        without needing data-event selectors - so this is a second rule onto
+        the same Lambda/SNS path, not a second stack."""
+        rule_name = self.cfg.get("secretsmanager_rule_name", "canary-secretsmanager-read")
+        pattern = {
+            "source": ["aws.secretsmanager"],
+            "detail-type": ["AWS API Call via CloudTrail"],
+            "detail": {
+                "eventSource": ["secretsmanager.amazonaws.com"],
+                "eventName": ["GetSecretValue", "BatchGetSecretValue"],
+            },
+        }
+        self._events.put_rule(
+            Name=rule_name,
+            EventPattern=json.dumps(pattern),
+            State="ENABLED",
+            Description="Canary: Secrets Manager read on context-bomb decoy secrets",
+        )
+        self._events.put_targets(
+            Rule=rule_name,
+            Targets=[{"Id": "canary-alerter", "Arn": lambda_arn}],
+        )
+        fn_name = self.cfg.get("lambda_function_name", "canary-honeytoken-alerter")
+        rule_arn = self._events.describe_rule(Name=rule_name)["Arn"]
+        try:
+            self._lambda.add_permission(
+                FunctionName=fn_name,
+                StatementId="canary-eventbridge-invoke-secrets",
+                Action="lambda:InvokeFunction",
+                Principal="events.amazonaws.com",
+                SourceArn=rule_arn,
+            )
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] != "ResourceConflictException":
+                raise
+        log.info("EventBridge rule ready (Secrets Manager): %s", rule_name)
+        return rule_arn
+
     # -- CloudTrail data events ------------------------------------------
     def ensure_cloudtrail(self, honeytoken_buckets: list[str]) -> str:
         """Ensure a trail exists with S3 data-event selectors for the given
@@ -353,6 +395,7 @@ class Provisioner:
         out["lambda_role_arn"] = self.ensure_lambda_role(out["sns_topic_arn"])
         out["lambda_arn"] = self.ensure_lambda(out["lambda_role_arn"], out["sns_topic_arn"])
         out["eventbridge_rule_arn"] = self.ensure_eventbridge(out["lambda_arn"])
+        out["secretsmanager_rule_arn"] = self.ensure_secretsmanager_eventbridge(out["lambda_arn"])
         out["cloudtrail_name"] = self.ensure_cloudtrail(honeytoken_buckets)
         qurl = self.ensure_ingest_queue(out["sns_topic_arn"])
         if qurl:

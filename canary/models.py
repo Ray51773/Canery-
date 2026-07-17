@@ -6,6 +6,7 @@ they are trivial to serialize (dashboard, JSON export) and test.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any
@@ -23,6 +24,14 @@ STATUS_PLANTED = "planted"      # pushed into at least one target surface
 STATUS_TRIGGERED = "triggered"  # at least one detection point fired
 STATUS_RETIRED = "retired"      # deliberately decommissioned
 VALID_STATUSES = {STATUS_CREATED, STATUS_PLANTED, STATUS_TRIGGERED, STATUS_RETIRED}
+
+# Artefact intent. Immutable, set at generation. A tracer (detect) works by an
+# AI absorbing and repeating a fact; a context bomb (deter) works by an AI
+# refusing when it reads the payload. The two must never share an artefact, so
+# intent is a required field that branches generation, planting and reporting.
+INTENT_DETECT = "detect"
+INTENT_DETER = "deter"
+VALID_INTENTS = {INTENT_DETECT, INTENT_DETER}
 
 
 @dataclass
@@ -45,9 +54,37 @@ class Canary:
     status: str = STATUS_CREATED
     created_at: str = field(default_factory=utcnow_iso)
     notes: str = ""
+    # Immutable at generation; defaults to detect so records that predate deter
+    # mode migrate to tracers automatically (they are tracers by definition).
+    intent: str = INTENT_DETECT
+    # deter-only fields (None/empty for tracers). For a deter artefact the S3
+    # columns above carry the Secrets Manager resource instead (s3_key = the
+    # secret name embedding the canary_id, s3_url = the secret ARN), so the
+    # existing key->canary alert/ingest path is reused unchanged.
+    shape: str | None = None                 # decoy resource shape
+    payload_source: str | None = None        # "user_supplied" | "builtin_reference"
+    guardrail_dependency: str = ""           # which vendor safety behaviour it relies on
+    last_validated_against: str = ""         # JSON list of {model,version,date,result}
+
+    @property
+    def is_deter(self) -> bool:
+        return self.intent == INTENT_DETER
+
+    def validations(self) -> list[dict[str, Any]]:
+        """Parsed last_validated_against entries (empty list if none/invalid)."""
+        if not self.last_validated_against:
+            return []
+        try:
+            data = json.loads(self.last_validated_against)
+            return data if isinstance(data, list) else []
+        except (ValueError, TypeError):
+            return []
 
     def unique_tokens(self) -> list[str]:
-        """Canary-level tokens the probe/fuzzy matcher looks for."""
+        """Canary-level tokens the probe/fuzzy matcher looks for. A deter
+        artefact has no regurgitation tell, so it exposes no probe tokens."""
+        if self.is_deter:
+            return []
         tokens = [self.codename]
         if self.s3_key:
             tokens.append(self.s3_key)
@@ -108,6 +145,28 @@ class S3Hit:
     user_agent: str
     event_time: str
     raw: str = ""            # full raw event JSON, for audit
+    ingested_at: str = field(default_factory=utcnow_iso)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class SecretHit:
+    """A read event on a honeytoken Secrets Manager secret (from CloudTrail).
+
+    The deter-mode analogue of S3Hit: a GetSecretValue on a decoy secret means
+    an agent read a context bomb. We observe the read; whether the agent then
+    refused is inferred, not measured."""
+
+    hit_id: str
+    canary_id: str
+    secret_id: str           # secret ARN or name
+    event_name: str          # GetSecretValue / BatchGetSecretValue
+    source_ip: str
+    user_agent: str
+    event_time: str
+    raw: str = ""
     ingested_at: str = field(default_factory=utcnow_iso)
 
     def to_dict(self) -> dict[str, Any]:

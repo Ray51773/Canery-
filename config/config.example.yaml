@@ -43,6 +43,13 @@ aws:
   cloudtrail_log_bucket_prefix: "acme-canary-cloudtrail-logs"
   lambda_function_name: "canary-honeytoken-alerter"
   eventbridge_rule_name: "canary-s3-data-access"
+  # Deter mode (context bombs): decoy Secrets Manager secrets. The secret name
+  # embeds the canary_id (<secret_prefix>/<canary_id>/<rand>) just like the S3
+  # key, so GetSecretValue reads alert on the SAME Lambda/SNS path. The
+  # EventBridge rule below matches Secrets Manager read events (a CloudTrail
+  # management event - no extra data-event selectors needed).
+  secret_prefix: "acme-internal-canary"
+  secretsmanager_rule_name: "canary-secretsmanager-read"
   # Optional: an SQS queue subscribed to the SNS topic so `canary ingest-hits`
   # can pull access events back into the local DB for the dashboard. If null,
   # ingest is disabled and the dashboard shows only what it can see locally.

@@ -18,7 +18,9 @@ from .models import (
     Plant,
     ProbeHit,
     S3Hit,
+    SecretHit,
     Variant,
+    INTENT_DETECT,
     VALID_STATUSES,
 )
 
@@ -36,7 +38,12 @@ CREATE TABLE IF NOT EXISTS canaries (
     s3_url      TEXT,
     status      TEXT NOT NULL,
     created_at  TEXT NOT NULL,
-    notes       TEXT DEFAULT ''
+    notes       TEXT DEFAULT '',
+    intent                 TEXT NOT NULL DEFAULT 'detect',
+    shape                  TEXT,
+    payload_source         TEXT,
+    guardrail_dependency   TEXT DEFAULT '',
+    last_validated_against TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS variants (
@@ -72,6 +79,18 @@ CREATE TABLE IF NOT EXISTS s3_hits (
     ingested_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS secret_hits (
+    hit_id      TEXT PRIMARY KEY,
+    canary_id   TEXT,
+    secret_id   TEXT NOT NULL,
+    event_name  TEXT NOT NULL,
+    source_ip   TEXT,
+    user_agent  TEXT,
+    event_time  TEXT NOT NULL,
+    raw         TEXT DEFAULT '',
+    ingested_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS probe_hits (
     hit_id        TEXT PRIMARY KEY,
     canary_id     TEXT NOT NULL,
@@ -88,8 +107,20 @@ CREATE INDEX IF NOT EXISTS idx_variants_canary ON variants(canary_id);
 CREATE INDEX IF NOT EXISTS idx_plants_canary ON plants(canary_id);
 CREATE INDEX IF NOT EXISTS idx_s3_hits_canary ON s3_hits(canary_id);
 CREATE INDEX IF NOT EXISTS idx_s3_hits_key ON s3_hits(s3_key);
+CREATE INDEX IF NOT EXISTS idx_secret_hits_canary ON secret_hits(canary_id);
 CREATE INDEX IF NOT EXISTS idx_probe_hits_canary ON probe_hits(canary_id);
 """
+
+# Columns added after v1. A pre-existing database predates deter mode, so any
+# canary already stored is a tracer: the added intent column defaults to
+# 'detect', migrating existing rows without touching them.
+_CANARY_MIGRATIONS = {
+    "intent": "TEXT NOT NULL DEFAULT 'detect'",
+    "shape": "TEXT",
+    "payload_source": "TEXT",
+    "guardrail_dependency": "TEXT DEFAULT ''",
+    "last_validated_against": "TEXT DEFAULT ''",
+}
 
 
 class Store:
@@ -119,6 +150,17 @@ class Store:
     def _init_schema(self) -> None:
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Add columns introduced after v1 to a pre-existing canaries table.
+        ADD COLUMN with a default backfills existing rows in place, so stored
+        canaries are never broken or lost."""
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(canaries)").fetchall()}
+        for name, ddl in _CANARY_MIGRATIONS.items():
+            if name not in cols:
+                conn.execute(f"ALTER TABLE canaries ADD COLUMN {name} {ddl}")
+                log.info("Migrated canaries table: added column %s", name)
 
     # --- canaries --------------------------------------------------------
     def add_canary(self, c: Canary) -> None:
@@ -126,12 +168,16 @@ class Store:
             conn.execute(
                 """INSERT INTO canaries
                    (canary_id, category, codename, base_fact, quarter,
-                    s3_bucket, s3_key, s3_url, status, created_at, notes)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    s3_bucket, s3_key, s3_url, status, created_at, notes,
+                    intent, shape, payload_source, guardrail_dependency,
+                    last_validated_against)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (c.canary_id, c.category, c.codename, c.base_fact, c.quarter,
-                 c.s3_bucket, c.s3_key, c.s3_url, c.status, c.created_at, c.notes),
+                 c.s3_bucket, c.s3_key, c.s3_url, c.status, c.created_at, c.notes,
+                 c.intent, c.shape, c.payload_source, c.guardrail_dependency,
+                 c.last_validated_against),
             )
-        log.info("Stored canary %s (%s / %s)", c.canary_id, c.category, c.codename)
+        log.info("Stored %s %s (%s / %s)", c.intent, c.canary_id, c.category, c.codename)
 
     def get_canary(self, canary_id: str) -> Canary | None:
         with self._conn() as conn:
@@ -251,6 +297,35 @@ class Store:
             ).fetchall()
         return [_row_to_s3hit(r) for r in rows]
 
+    # --- secret hits (deter-mode Secrets Manager reads) ------------------
+    def add_secret_hit(self, h: SecretHit) -> bool:
+        """Insert a Secrets Manager read hit. Returns False if this hit_id
+        already exists (idempotent ingest from an at-least-once queue)."""
+        with self._conn() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM secret_hits WHERE hit_id=?", (h.hit_id,)
+            ).fetchone()
+            if exists:
+                return False
+            conn.execute(
+                """INSERT INTO secret_hits
+                   (hit_id, canary_id, secret_id, event_name, source_ip,
+                    user_agent, event_time, raw, ingested_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (h.hit_id, h.canary_id, h.secret_id, h.event_name,
+                 h.source_ip, h.user_agent, h.event_time, h.raw, h.ingested_at),
+            )
+        log.warning("Secrets Manager honeytoken HIT recorded: canary=%s secret=%s ip=%s",
+                    h.canary_id, h.secret_id, h.source_ip)
+        return True
+
+    def list_secret_hits(self, canary_id: str) -> list[SecretHit]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM secret_hits WHERE canary_id=? ORDER BY event_time", (canary_id,)
+            ).fetchall()
+        return [_row_to_secrethit(r) for r in rows]
+
     # --- probe hits ------------------------------------------------------
     def add_probe_hit(self, h: ProbeHit) -> None:
         with self._conn() as conn:
@@ -274,12 +349,26 @@ class Store:
 
 
 # --- row -> model helpers ------------------------------------------------
+def _rget(r: sqlite3.Row, key: str, default=None):
+    """Tolerant column read: a row from an older DB may lack newer columns."""
+    try:
+        val = r[key]
+    except (IndexError, KeyError):
+        return default
+    return val if val is not None else default
+
+
 def _row_to_canary(r: sqlite3.Row) -> Canary:
     return Canary(
         canary_id=r["canary_id"], category=r["category"], codename=r["codename"],
         base_fact=r["base_fact"], quarter=r["quarter"], s3_bucket=r["s3_bucket"],
         s3_key=r["s3_key"], s3_url=r["s3_url"], status=r["status"],
         created_at=r["created_at"], notes=r["notes"] or "",
+        intent=_rget(r, "intent", INTENT_DETECT) or INTENT_DETECT,
+        shape=_rget(r, "shape"),
+        payload_source=_rget(r, "payload_source"),
+        guardrail_dependency=_rget(r, "guardrail_dependency", "") or "",
+        last_validated_against=_rget(r, "last_validated_against", "") or "",
     )
 
 
@@ -302,6 +391,15 @@ def _row_to_s3hit(r: sqlite3.Row) -> S3Hit:
     return S3Hit(
         hit_id=r["hit_id"], canary_id=r["canary_id"], s3_bucket=r["s3_bucket"],
         s3_key=r["s3_key"], event_name=r["event_name"], source_ip=r["source_ip"],
+        user_agent=r["user_agent"], event_time=r["event_time"], raw=r["raw"] or "",
+        ingested_at=r["ingested_at"],
+    )
+
+
+def _row_to_secrethit(r: sqlite3.Row) -> SecretHit:
+    return SecretHit(
+        hit_id=r["hit_id"], canary_id=r["canary_id"], secret_id=r["secret_id"],
+        event_name=r["event_name"], source_ip=r["source_ip"],
         user_agent=r["user_agent"], event_time=r["event_time"], raw=r["raw"] or "",
         ingested_at=r["ingested_at"],
     )

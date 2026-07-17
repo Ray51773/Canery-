@@ -80,9 +80,12 @@ class ProbeRunner:
 
     def run(self) -> dict[str, Any]:
         """Probe every active (planted) canary. Returns a run summary."""
+        # Deter bombs are skipped entirely: a bomb succeeds by making a model
+        # refuse, so probing one is meaningless and would leak the payload into
+        # a public tool.
         canaries = [
             c for c in self.store.list_canaries()
-            if c.status in ("planted", STATUS_TRIGGERED)
+            if c.status in ("planted", STATUS_TRIGGERED) and not c.is_deter
         ]
         threshold = float(self.pcfg.get("match_threshold", 82))
         summary = {"canaries": len(canaries), "hits": 0, "tools_run": [], "errors": 0}

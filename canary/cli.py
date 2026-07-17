@@ -23,7 +23,7 @@ from .config import Config, ConfigError, load_config
 from .dashboard import build_report, render_json, render_text
 from .generator import CanaryGenerator, rewrite_s3_url
 from .logging_setup import setup_logging
-from .models import STATUS_PLANTED
+from .models import INTENT_DETECT, INTENT_DETER, STATUS_PLANTED
 from .store import Store
 
 
@@ -35,7 +35,101 @@ def _bootstrap(args) -> tuple[Config, Store]:
 
 
 # --- create --------------------------------------------------------------
+def _parse_validations(raw_entries: list[str]) -> list[dict]:
+    """Parse repeated --validated 'model=..,version=..,date=..,result=..'
+    strings into last_validated_against dicts."""
+    out = []
+    for entry in raw_entries or []:
+        rec = {"model": "", "version": "", "date": "", "result": "refused"}
+        for part in entry.split(","):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                k = k.strip()
+                if k in rec:
+                    rec[k] = v.strip()
+        if rec["model"] and rec["date"]:
+            out.append(rec)
+    return out
+
+
 def cmd_create(args) -> int:
+    if getattr(args, "intent", INTENT_DETECT) == INTENT_DETER:
+        return _cmd_create_deter(args)
+    return _cmd_create_detect(args)
+
+
+def _cmd_create_deter(args) -> int:
+    """Create a context bomb (intent=deter): the user-supplied payload becomes
+    the value of a real decoy Secrets Manager secret, whose read alerts on the
+    same SNS path as an S3 honeytoken. No fabricated fact is generated."""
+    config, store = _bootstrap(args)
+    gen = CanaryGenerator.from_file(
+        config.generator.get("categories_file", "config/categories.yaml"),
+        seed=config.generator.get("seed"),
+    )
+    # Payload from a file (preferred - keeps it out of shell history) or inline.
+    payload = args.payload
+    if args.payload_file:
+        try:
+            with open(args.payload_file, "r", encoding="utf-8") as fh:
+                payload = fh.read().strip()
+        except OSError as exc:
+            print(f"ERROR reading --payload-file: {exc}", file=sys.stderr)
+            return 1
+    if not payload:
+        print("A deter artefact needs a payload. Pass --payload-file <path> "
+              "(preferred) or --payload <string>.", file=sys.stderr)
+        return 1
+
+    validations = _parse_validations(args.validated)
+    if not validations and not args.unvalidated:
+        print("Refusing to save an unvalidated bomb by default. Record what you "
+              "tested it against with --validated 'model=..,date=..,result=..' "
+              "(repeatable), or pass --unvalidated to save it explicitly flagged.",
+              file=sys.stderr)
+        return 1
+
+    shape = args.shape or "secrets_manager"
+    canary, variants = gen.generate_deter(
+        payload=payload, shape=shape, assets=args.asset or [],
+        n_variants=(args.variants or len(args.asset or []) or 3),
+        payload_source=args.payload_source, guardrail_dependency=args.guardrail or "",
+        validations=validations, label=args.label,
+    )
+
+    if not args.no_honeytoken:
+        try:
+            from .aws.honeytoken import SecretHoneytokenManager
+            mgr = SecretHoneytokenManager(config.aws)
+            secret = mgr.create_secret(canary.canary_id, payload, shape=shape)
+            # Swap the real resource back into the artefact record so the
+            # console export and the alert path agree on the ARN.
+            canary.s3_key = secret["name"]
+            canary.s3_url = secret["arn"]
+        except Exception as exc:
+            print(f"ERROR creating decoy secret: {exc}", file=sys.stderr)
+            print("  (use --no-honeytoken to record a bomb without creating the "
+                  "real secret, e.g. offline)", file=sys.stderr)
+            return 2
+
+    store.add_canary(canary)
+    for v in variants:
+        store.add_variant(v)
+
+    print(f"Created context bomb {canary.canary_id}")
+    print(f"  shape        : {shape}")
+    print(f"  payload src  : {canary.payload_source}")
+    print(f"  guardrail    : {canary.guardrail_dependency or '(not recorded)'}")
+    print(f"  secret ref   : {canary.s3_url or '(no secret created)'}")
+    print(f"  assets       : {len(variants)}")
+    print(f"  validated    : {len(validations)} entr(y/ies)"
+          + ("  [UNVALIDATED]" if not validations else ""))
+    for v in variants:
+        print(f"    - {v.variant_id}  asset='{v.audience}'")
+    return 0
+
+
+def _cmd_create_detect(args) -> int:
     config, store = _bootstrap(args)
     gen = CanaryGenerator.from_file(
         config.generator.get("categories_file", "config/categories.yaml"),
@@ -164,7 +258,7 @@ def cmd_ingest(args) -> int:
     except Exception as exc:
         print(f"ERROR ingesting hits: {exc}", file=sys.stderr)
         return 2
-    print(f"Ingested {n} new S3 honeytoken hit(s).")
+    print(f"Ingested {n} new honeytoken read hit(s) (S3 + Secrets Manager).")
     return 0
 
 
@@ -181,6 +275,9 @@ def cmd_probe(args) -> int:
         print("Public-AI probing drives third-party web UIs (ToS risk) and is "
               "gated. Re-run with --confirm to actually run enabled tools.",
               file=sys.stderr)
+    # Probing a deter bomb is meaningless (a bomb succeeds by making a model
+    # refuse) and would put the payload into a public tool - the runner skips
+    # deter artefacts entirely.
     runner = ProbeRunner(config, store, gen, confirmed=args.confirm)
     summary = runner.run()
     print("Probe run summary:")
@@ -210,14 +307,34 @@ def build_parser() -> argparse.ArgumentParser:
                    help="path to config YAML (default: config/config.yaml)")
     sub = p.add_subparsers(dest="command", required=True)
 
-    c = sub.add_parser("create", help="generate a canary + variants + S3 honeytoken")
-    c.add_argument("--category", help="fact category (default from config)")
-    c.add_argument("--variants", type=int, help="number of variants")
-    c.add_argument("--audience", action="append",
-                   help="audience/team tag for a variant (repeatable, in order)")
-    c.add_argument("--bucket", help="reuse a specific honeytoken bucket")
+    c = sub.add_parser("create", help="generate a canary (detect) or context bomb (deter)")
+    c.add_argument("--intent", choices=[INTENT_DETECT, INTENT_DETER], default=INTENT_DETECT,
+                   help="detect = tracer canary (default); deter = context bomb")
+    c.add_argument("--variants", type=int, help="number of variants / assets")
     c.add_argument("--no-honeytoken", action="store_true",
-                   help="skip S3 object creation (offline/dry run)")
+                   help="skip real AWS resource creation (offline/dry run)")
+    # detect (tracer) options
+    c.add_argument("--category", help="[detect] fact category (default from config)")
+    c.add_argument("--audience", action="append",
+                   help="[detect] audience/team tag for a variant (repeatable, in order)")
+    c.add_argument("--bucket", help="[detect] reuse a specific honeytoken bucket")
+    # deter (context bomb) options
+    c.add_argument("--shape", help="[deter] decoy resource shape (secrets_manager, env, "
+                   "aws_credentials, dns_txt, iam_role)")
+    c.add_argument("--payload", help="[deter] payload string (prefer --payload-file)")
+    c.add_argument("--payload-file", help="[deter] file holding the payload (keeps it "
+                   "out of shell history)")
+    c.add_argument("--asset", action="append",
+                   help="[deter] decoy asset name for a variant (repeatable, in order)")
+    c.add_argument("--label", help="[deter] human label for the bomb")
+    c.add_argument("--guardrail", help="[deter] vendor safety behaviour the payload relies on")
+    c.add_argument("--payload-source", choices=["user_supplied", "builtin_reference"],
+                   default="user_supplied", help="[deter] payload provenance")
+    c.add_argument("--validated", action="append", default=[],
+                   help="[deter] validation entry 'model=..,version=..,date=..,result=..' "
+                   "(repeatable). Required unless --unvalidated.")
+    c.add_argument("--unvalidated", action="store_true",
+                   help="[deter] save with no validation, explicitly flagged")
     c.set_defaults(func=cmd_create)
 
     pl = sub.add_parser("plant", help="push a canary's variants into a target surface")

@@ -13,13 +13,57 @@ numbers are random; phrases are assembled from generic word lists.
 
 from __future__ import annotations
 
+import json
 import random
 import uuid
 from typing import Any
 
 import yaml
 
-from .models import Canary, Variant
+from .models import Canary, Variant, INTENT_DETER
+
+
+# Decoy resource shapes for deter mode. Mirrors the shapes offered by the
+# browser console (bomb.html). The payload is placed where a reading agent
+# would ingest it; everything else is synthetic filler.
+def _wrap_secrets_manager(payload: str, asset: str) -> str:
+    return json.dumps({
+        "username": f"svc-{asset}",
+        "engine": "postgres",
+        "host": f"{asset}.db.internal",
+        "port": 5432,
+        "note": payload,
+    }, indent=2)
+
+
+def _wrap_env(payload: str, asset: str) -> str:
+    esc = payload.replace('"', '\\"')
+    return (f"# {asset} service environment\nSERVICE_NAME={asset}\n"
+            f"LOG_LEVEL=info\nREGION=us-east-1\nDEPLOY_NOTE=\"{esc}\"")
+
+
+def _wrap_aws_credentials(payload: str, asset: str) -> str:
+    return (f"[{asset}]\naws_access_key_id=AKIAEXAMPLE0DECOY000\n"
+            f"aws_secret_access_key=wJalrDECOYnotarealkeyEXAMPLEKEY0000decoy0\n"
+            f"# operator note: {payload}")
+
+
+def _wrap_dns_txt(payload: str, asset: str) -> str:
+    esc = payload.replace('"', '\\"')
+    return f'_note.{asset}.decoy.example.com.   300   IN   TXT   "{esc}"'
+
+
+def _wrap_iam_role(payload: str, asset: str) -> str:
+    return f"Role name: {asset}-automation-role\nDescription: {payload}"
+
+
+DETER_SHAPES = {
+    "secrets_manager": _wrap_secrets_manager,
+    "env": _wrap_env,
+    "aws_credentials": _wrap_aws_credentials,
+    "dns_txt": _wrap_dns_txt,
+    "iam_role": _wrap_iam_role,
+}
 
 # Syllables for invented codenames. These are nonsense-but-pronounceable so
 # they read like real internal codenames while being statistically unique.
@@ -159,6 +203,61 @@ class CanaryGenerator:
                 )
             )
 
+        return canary, variants
+
+    def generate_deter(
+        self,
+        payload: str,
+        shape: str = "secrets_manager",
+        assets: list[str] | None = None,
+        n_variants: int = 3,
+        payload_source: str = "user_supplied",
+        guardrail_dependency: str = "",
+        validations: list[dict[str, Any]] | None = None,
+        label: str | None = None,
+    ) -> tuple[Canary, list[Variant]]:
+        """Build a context bomb (intent=deter). The generator branches here at
+        the top on intent: a bomb has no fabricated fact, codename or S3
+        tracer token - the user-supplied ``payload`` is the whole artefact, and
+        efficacy is an empirical property recorded in ``validations``, never
+        invented. Variants are per-asset (same payload, distinct decoy assets),
+        so fingerprinting one asset's exact bytes does not disable the rest."""
+        if not payload or not payload.strip():
+            raise GeneratorError("A deter artefact requires a payload string")
+        if shape not in DETER_SHAPES:
+            raise GeneratorError(
+                f"Unknown shape {shape!r}; known: {sorted(DETER_SHAPES)}"
+            )
+        wrap = DETER_SHAPES[shape]
+        assets = assets or []
+        canary_id = "bomb_" + uuid.uuid4().hex[:12]
+        base = (label or "").strip() or f"{shape} decoy"
+
+        variants: list[Variant] = []
+        for i in range(max(1, n_variants)):
+            asset = assets[i] if i < len(assets) else f"asset-{i + 1}"
+            variants.append(
+                Variant(
+                    variant_id="asset_" + uuid.uuid4().hex[:12],
+                    canary_id=canary_id,
+                    text=wrap(payload, asset),
+                    marker=asset,          # the decoy asset name identifies the variant
+                    audience=asset,
+                )
+            )
+
+        canary = Canary(
+            canary_id=canary_id,
+            category="context_bomb",
+            codename=base,
+            base_fact=payload,
+            quarter="n/a",
+            intent=INTENT_DETER,
+            shape=shape,
+            payload_source=payload_source,
+            guardrail_dependency=guardrail_dependency,
+            last_validated_against=json.dumps(validations or []),
+        )
         return canary, variants
 
     def inverse_probes(self, category: str, quarter: str) -> list[str]:

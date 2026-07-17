@@ -1,0 +1,39 @@
+2026-07-17T10:25:18+0000 INFO    canary.local_docstore: Planted variant var_1 -> /tmp/pytest-of-root/pytest-0/test_plant_writes_one_file_per0/docs/product-can_x-var_1.md
+2026-07-17T10:25:18+0000 INFO    canary.local_docstore: Planted variant var_2 -> /tmp/pytest-of-root/pytest-0/test_plant_writes_one_file_per0/docs/product-can_x-var_2.md
+2026-07-17T10:25:18+0000 INFO    canary.local_docstore: Planted variant var_1 -> /tmp/pytest-of-root/pytest-0/test_to_plants_creates_records0/docs/product-can_x-var_1.md
+2026-07-17T10:25:18+0000 INFO    canary.local_docstore: Planted variant var_2 -> /tmp/pytest-of-root/pytest-0/test_to_plants_creates_records0/docs/product-can_x-var_2.md
+2026-07-17T10:25:18+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:25:18+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:25:18+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:25:18+0000 INFO    canary.store: Canary can_1 status -> planted
+2026-07-17T10:25:18+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:25:18+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:25:18+0000 INFO    canary.store: Recorded plant pl_1: canary can_1 -> local_docstore (/tmp/x.md)
+2026-07-17T10:25:18+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:25:18+0000 WARNING canary.store: S3 honeytoken HIT recorded: canary=can_1 key=reports/can_1/abc.pdf ip=1.2.3.4
+2026-07-17T10:25:18+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:25:18+0000 WARNING canary.store: Probe HIT recorded: canary=can_1 tool=copilot token='Zephyrine' score=95.0
+2026-07-17T10:26:08+0000 INFO    canary.store: Migrated canaries table: added column intent
+2026-07-17T10:26:08+0000 INFO    canary.store: Migrated canaries table: added column shape
+2026-07-17T10:26:08+0000 INFO    canary.store: Migrated canaries table: added column payload_source
+2026-07-17T10:26:08+0000 INFO    canary.store: Migrated canaries table: added column guardrail_dependency
+2026-07-17T10:26:08+0000 INFO    canary.store: Migrated canaries table: added column last_validated_against
+2026-07-17T10:26:08+0000 INFO    canary.store: Stored deter bomb_1 (context_bomb / decoy)
+2026-07-17T10:26:08+0000 WARNING canary.store: Secrets Manager honeytoken HIT recorded: canary=bomb_1 secret=arn:...:secret:x ip=203.0.113.9
+2026-07-17T10:26:08+0000 INFO    canary.local_docstore: Planted variant var_1 -> /tmp/pytest-of-root/pytest-1/test_plant_writes_one_file_per0/docs/product-can_x-var_1.md
+2026-07-17T10:26:08+0000 INFO    canary.local_docstore: Planted variant var_2 -> /tmp/pytest-of-root/pytest-1/test_plant_writes_one_file_per0/docs/product-can_x-var_2.md
+2026-07-17T10:26:08+0000 INFO    canary.local_docstore: Planted variant var_1 -> /tmp/pytest-of-root/pytest-1/test_to_plants_creates_records0/docs/product-can_x-var_1.md
+2026-07-17T10:26:08+0000 INFO    canary.local_docstore: Planted variant var_2 -> /tmp/pytest-of-root/pytest-1/test_to_plants_creates_records0/docs/product-can_x-var_2.md
+2026-07-17T10:26:08+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:26:08+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:26:09+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:26:09+0000 INFO    canary.store: Canary can_1 status -> planted
+2026-07-17T10:26:09+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:26:09+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:26:09+0000 INFO    canary.store: Recorded plant pl_1: canary can_1 -> local_docstore (/tmp/x.md)
+2026-07-17T10:26:09+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:26:09+0000 WARNING canary.store: S3 honeytoken HIT recorded: canary=can_1 key=reports/can_1/abc.pdf ip=1.2.3.4
+2026-07-17T10:26:09+0000 INFO    canary.store: Stored detect can_1 (product / Project Zephyrine)
+2026-07-17T10:26:09+0000 WARNING canary.store: Probe HIT recorded: canary=can_1 tool=copilot token='Zephyrine' score=95.0
+2026-07-17T10:26:22+0000 INFO    canary.store: Stored deter bomb_a9e170ff6ae6 (context_bomb / prod db decoy)
+2026-07-17T10:26:22+0000 INFO    canary.store: Stored detect can_80e3d4c00b58 (product / Project Xanon)

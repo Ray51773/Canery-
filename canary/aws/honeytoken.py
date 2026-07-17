@@ -122,3 +122,44 @@ class HoneytokenManager:
             b"trailer<</Root 1 0 R/Size 4>>\n"
             b"startxref\n0\n%%EOF\n"
         )
+
+
+class SecretHoneytokenManager:
+    """Deter-mode honeytoken: a real AWS Secrets Manager secret whose value is
+    the context-bomb payload. The secret NAME embeds the canary_id -
+
+        <secret_prefix>/<canary_id>/<random>
+
+    - exactly like the S3 key does, so the same Lambda maps a GetSecretValue
+    read back to a canary with no lookup table, and the same SNS/ingest path is
+    reused. This module only creates the secret; read alerting is wired once by
+    provision.py (CloudTrail management events + EventBridge)."""
+
+    def __init__(self, aws_config: dict[str, Any]):
+        self.cfg = aws_config
+        self.region = aws_config.get("region", "us-east-1")
+        self.secret_prefix = aws_config.get("secret_prefix", "internal-canary").strip("/")
+        self._sm = boto3.client("secretsmanager", region_name=self.region)
+
+    def create_secret(self, canary_id: str, payload: str, shape: str | None = None) -> dict[str, str]:
+        """Create the decoy secret for a deter canary. ``payload`` becomes the
+        secret's value verbatim - it is the string a reading agent ingests.
+        Returns a dict with name and arn. The name embeds the canary_id."""
+        name = f"{self.secret_prefix}/{canary_id}/{uuid.uuid4().hex[:12]}"
+        try:
+            resp = self._sm.create_secret(
+                Name=name,
+                SecretString=payload,
+                Description="Canary context-bomb decoy - synthetic, do not use",
+                Tags=[
+                    {"Key": "purpose", "Value": "canary-context-bomb"},
+                    {"Key": "canary_id", "Value": canary_id},
+                    {"Key": "shape", "Value": shape or "secrets_manager"},
+                ],
+            )
+        except ClientError as exc:
+            raise HoneytokenError(f"Could not create decoy secret: {exc}") from exc
+
+        arn = resp.get("ARN", "")
+        log.info("Created decoy secret for canary %s: %s", canary_id, name)
+        return {"name": name, "arn": arn}

@@ -18,7 +18,7 @@ from typing import Any
 import boto3
 
 from ..logging_setup import get_logger
-from ..models import S3Hit
+from ..models import S3Hit, SecretHit
 from ..store import Store
 
 log = get_logger()
@@ -69,8 +69,21 @@ class HitIngestor:
         body = json.loads(message["Body"])
         # Unwrap SNS envelope if present.
         payload = json.loads(body["Message"]) if "Message" in body else body
-        if payload.get("alert") != "s3_honeytoken_access":
-            return False
+        alert = payload.get("alert")
+        if alert == "s3_honeytoken_access":
+            return self._handle_s3(payload, message)
+        if alert == "secretsmanager_read":
+            return self._handle_secret(payload, message)
+        return False
+
+    def _flip_triggered(self, canary_id: str) -> None:
+        if canary_id and canary_id != "unknown":
+            try:
+                self.store.set_canary_status(canary_id, "triggered")
+            except (KeyError, ValueError):
+                pass
+
+    def _handle_s3(self, payload: dict[str, Any], message: dict[str, Any]) -> bool:
         hit = S3Hit(
             hit_id=payload.get("hit_id") or message["MessageId"],
             canary_id=payload.get("canary_id", "unknown"),
@@ -83,10 +96,22 @@ class HitIngestor:
             raw=json.dumps(payload),
         )
         is_new = self.store.add_s3_hit(hit)
-        if is_new and hit.canary_id and hit.canary_id != "unknown":
-            # A real access to a honeytoken flips the canary to triggered.
-            try:
-                self.store.set_canary_status(hit.canary_id, "triggered")
-            except (KeyError, ValueError):
-                pass
+        if is_new:
+            self._flip_triggered(hit.canary_id)
+        return is_new
+
+    def _handle_secret(self, payload: dict[str, Any], message: dict[str, Any]) -> bool:
+        hit = SecretHit(
+            hit_id=payload.get("hit_id") or message["MessageId"],
+            canary_id=payload.get("canary_id", "unknown"),
+            secret_id=payload.get("secret_id", ""),
+            event_name=payload.get("event_name", ""),
+            source_ip=payload.get("source_ip", ""),
+            user_agent=payload.get("user_agent", ""),
+            event_time=payload.get("event_time", ""),
+            raw=json.dumps(payload),
+        )
+        is_new = self.store.add_secret_hit(hit)
+        if is_new:
+            self._flip_triggered(hit.canary_id)
         return is_new
