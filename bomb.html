@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Context Bombs — AI Data-Leakage Canary System</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --panel-2:#fafbfd; --panel-3:#f0f3f8;
+    --border:#dfe3ea; --border-2:#eaedf3;
+    --text:#1a1f2b; --muted:#5c6472; --muted-2:#8790a0;
+    --brand:#2454ff; --brand-dark:#173bb0; --brand-light:#eaf0ff;
+    --canary:#d99413; --canary-bg:#fdf3df; --canary-border:#f0d999;
+    --bomb:#b0202f; --bomb-dark:#7d1622; --bomb-bg:#fceaea; --bomb-border:#f0b3b3;
+    --created:#8790a0; --created-bg:#eef0f3;
+    --planted:#2454ff; --planted-bg:#eaf0ff;
+    --triggered:#d43a3a; --triggered-bg:#fceaea;
+    --retired:#9aa2b1; --retired-bg:#f0f2f5;
+    --ok:#1a9e5b; --ok-bg:#e7f7ee;
+    --amber:#c47f0a; --amber-bg:#fdf3e0;
+    --code-bg:#f5f7fb; --code-text:#243049;
+    --radius:12px; --radius-sm:8px; --radius-lg:16px;
+    --shadow:0 1px 2px rgba(20,25,40,.06), 0 4px 16px rgba(20,25,40,.05);
+    --shadow-lg:0 8px 30px rgba(20,25,40,.10);
+    --mono:"SF Mono",SFMono-Regular,ui-monospace,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1420; --panel:#171d2b; --panel-2:#1c2333; --panel-3:#212a3d;
+      --border:#28303f; --border-2:#222a39;
+      --text:#e6e9f0; --muted:#9aa4b8; --muted-2:#6b7488;
+      --brand:#5b82ff; --brand-dark:#3a5fe0; --brand-light:#1b2542;
+      --canary:#f0b53f; --canary-bg:#2a2312; --canary-border:#4a3d16;
+      --bomb:#ff6b6b; --bomb-dark:#ff8a8a; --bomb-bg:#2e1a1c; --bomb-border:#5a2a2c;
+      --created:#7d8698; --created-bg:#232b3b;
+      --planted:#5b82ff; --planted-bg:#1b2542;
+      --triggered:#ff6b6b; --triggered-bg:#2e1a1c;
+      --retired:#6b7387; --retired-bg:#222a39;
+      --ok:#3ec77e; --ok-bg:#12291d;
+      --amber:#f0b53f; --amber-bg:#2a2312;
+      --code-bg:#111726; --code-text:#c3ccdf;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+      --shadow-lg:0 8px 30px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1420; --panel:#171d2b; --panel-2:#1c2333; --panel-3:#212a3d;
+    --border:#28303f; --border-2:#222a39;
+    --text:#e6e9f0; --muted:#9aa4b8; --muted-2:#6b7488;
+    --brand:#5b82ff; --brand-dark:#3a5fe0; --brand-light:#1b2542;
+    --canary:#f0b53f; --canary-bg:#2a2312; --canary-border:#4a3d16;
+    --bomb:#ff6b6b; --bomb-dark:#ff8a8a; --bomb-bg:#2e1a1c; --bomb-border:#5a2a2c;
+    --created:#7d8698; --created-bg:#232b3b;
+    --planted:#5b82ff; --planted-bg:#1b2542;
+    --triggered:#ff6b6b; --triggered-bg:#2e1a1c;
+    --retired:#6b7387; --retired-bg:#222a39;
+    --ok:#3ec77e; --ok-bg:#12291d;
+    --amber:#f0b53f; --amber-bg:#2a2312;
+    --code-bg:#111726; --code-text:#c3ccdf;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    --shadow-lg:0 8px 30px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f6f9; --panel:#ffffff; --panel-2:#fafbfd; --panel-3:#f0f3f8;
+    --border:#dfe3ea; --border-2:#eaedf3;
+    --text:#1a1f2b; --muted:#5c6472; --muted-2:#8790a0;
+    --brand:#2454ff; --brand-dark:#173bb0; --brand-light:#eaf0ff;
+    --canary:#d99413; --canary-bg:#fdf3df; --canary-border:#f0d999;
+    --bomb:#b0202f; --bomb-dark:#7d1622; --bomb-bg:#fceaea; --bomb-border:#f0b3b3;
+    --created:#8790a0; --created-bg:#eef0f3;
+    --planted:#2454ff; --planted-bg:#eaf0ff;
+    --triggered:#d43a3a; --triggered-bg:#fceaea;
+    --retired:#9aa2b1; --retired-bg:#f0f2f5;
+    --ok:#1a9e5b; --ok-bg:#e7f7ee;
+    --amber:#c47f0a; --amber-bg:#fdf3e0;
+    --code-bg:#f5f7fb; --code-text:#243049;
+    --shadow:0 1px 2px rgba(20,25,40,.06), 0 4px 16px rgba(20,25,40,.05);
+    --shadow-lg:0 8px 30px rgba(20,25,40,.10);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family:var(--sans); background:var(--bg); color:var(--text);
+    line-height:1.5; font-size:15px; -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{font-weight:660; letter-spacing:-.01em; margin:0 0 .3em; text-wrap:balance;}
+  a{color:var(--brand); text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  button{font-family:inherit; cursor:pointer;}
+  code,kbd{font-family:var(--mono);}
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .visually-hidden{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap;}
+
+  /* ---------- Header (bomb-themed so the mode is unmistakable) ---------- */
+  header.app-header{
+    background:linear-gradient(135deg,var(--bomb-dark),var(--bomb));
+    color:#fff; padding:16px 24px 14px;
+  }
+  .app-header .wrap{max-width:1180px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand .mark{
+    width:40px; height:40px; border-radius:11px; background:rgba(255,255,255,.16);
+    border:1px solid rgba(255,255,255,.3); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:22px;
+  }
+  .brand h1{font-size:18px; margin:0; line-height:1.15;}
+  .brand .tagline{font-size:12.5px; opacity:.92; margin-top:1px;}
+  .header-actions{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  .header-actions button,
+  .header-actions a{
+    background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.3); color:#fff;
+    border-radius:999px; padding:6px 13px; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;
+    text-decoration:none; cursor:pointer; font-family:inherit; line-height:1.4;
+  }
+  .header-actions button:hover,
+  .header-actions a:hover{background:rgba(255,255,255,.26); text-decoration:none;}
+
+  .mode-strip{
+    background:var(--bomb-bg); color:var(--bomb-dark); border-bottom:1px solid var(--bomb-border);
+    font-size:12.5px; padding:7px 24px; text-align:center; font-weight:600;
+  }
+  :root[data-theme="dark"] .mode-strip{color:var(--bomb-dark);}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .mode-strip{color:var(--bomb-dark);} }
+  .disclaimer-strip{
+    background:var(--canary-bg); color:#7a5600; border-bottom:1px solid var(--canary-border);
+    font-size:12.5px; padding:7px 24px; text-align:center;
+  }
+  :root[data-theme="dark"] .disclaimer-strip{color:var(--canary);}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .disclaimer-strip{color:var(--canary);} }
+  .disclaimer-strip strong{font-weight:700;}
+
+  /* ---------- Tabs ---------- */
+  nav.tabs{
+    display:flex; gap:2px; background:var(--panel); border-bottom:1px solid var(--border);
+    padding:0 24px; max-width:1180px; margin:0 auto; overflow-x:auto;
+  }
+  nav.tabs button{
+    background:none; border:none; padding:13px 15px; font-size:14px; font-weight:600; color:var(--muted);
+    border-bottom:3px solid transparent; white-space:nowrap; display:flex; align-items:center; gap:7px;
+  }
+  nav.tabs button:hover{color:var(--text);}
+  nav.tabs button[aria-selected="true"]{color:var(--bomb); border-bottom-color:var(--bomb);}
+  nav.tabs .tab-count{
+    display:inline-block; min-width:18px; height:18px; padding:0 5px; border-radius:999px;
+    background:var(--panel-3); color:var(--muted); font-size:11px; line-height:18px; text-align:center; font-variant-numeric:tabular-nums;
+  }
+  nav.tabs button[aria-selected="true"] .tab-count{background:var(--bomb); color:#fff;}
+
+  main{max-width:1180px; margin:0 auto; padding:22px 24px 90px;}
+  .tabpanel{display:none;}
+  .tabpanel.active{display:block; animation:fade .2s ease;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+  @media (prefers-reduced-motion:reduce){ .tabpanel.active{animation:none;} }
+
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; margin-bottom:18px; box-shadow:var(--shadow);}
+  .panel h2{font-size:17px;}
+  .panel h3{font-size:14px; margin:0 0 4px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted);}
+  .panel-lead{color:var(--muted); font-size:13.5px; margin:0 0 16px;}
+  .section-title{display:flex; align-items:center; gap:10px; margin:0 0 4px;}
+  .section-title h2{margin:0; font-size:18px;}
+  .section-sub{color:var(--muted); font-size:13.5px; margin:0 0 18px;}
+
+  .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+  @media (max-width:860px){ .grid-2,.grid-3{grid-template-columns:1fr;} }
+
+  label.field-label{display:block; font-size:12px; font-weight:660; color:var(--muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:.03em;}
+  input[type=text],input[type=number],input[type=date],select,textarea{
+    width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:13.5px;
+    font-family:inherit; background:var(--panel-2); color:var(--text);
+  }
+  textarea{font-family:var(--mono); font-size:12.5px; min-height:96px; resize:vertical; line-height:1.55;}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--bomb); outline-offset:1px; background:var(--panel);}
+  .field{margin-bottom:14px;}
+  .field-hint{font-size:12px; color:var(--muted-2); margin-top:5px;}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:7px; background:var(--bomb); color:#fff; border:none;
+    padding:10px 16px; border-radius:var(--radius-sm); font-size:13.5px; font-weight:640;
+  }
+  .btn:hover{background:var(--bomb-dark);}
+  .btn:disabled{background:var(--created); cursor:not-allowed; opacity:.6;}
+  .btn.secondary{background:var(--panel-2); color:var(--text); border:1px solid var(--border);}
+  .btn.secondary:hover{background:var(--panel-3);}
+  .btn.danger{background:transparent; color:var(--triggered); border:1px solid var(--triggered);}
+  .btn.danger:hover{background:var(--triggered-bg);}
+  .btn.small{padding:6px 11px; font-size:12px;}
+  .btn.tiny{padding:4px 9px; font-size:11.5px; border-radius:6px;}
+  .btn-row{display:flex; gap:9px; flex-wrap:wrap; align-items:center;}
+
+  .info-box{background:var(--brand-light); border:1px solid color-mix(in srgb,var(--brand) 30%, transparent); border-radius:var(--radius-sm); padding:12px 14px; font-size:13px; margin-bottom:16px;}
+  .info-box strong{font-weight:700;}
+  .warn-box{background:var(--canary-bg); border:1px solid var(--canary-border); border-radius:var(--radius-sm); padding:12px 14px; font-size:13px; margin-bottom:16px;}
+  .warn-box strong{display:block; margin-bottom:3px; color:var(--canary);}
+  .bomb-box{background:var(--bomb-bg); border:1px solid var(--bomb-border); border-radius:var(--radius-sm); padding:13px 15px; font-size:13px; margin-bottom:16px;}
+  .bomb-box strong{color:var(--bomb);}
+  .bomb-box ul{margin:8px 0 0; padding-left:18px;}
+  .bomb-box li{margin:4px 0;}
+
+  /* ---------- Stat tiles ---------- */
+  .stat-row{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px;}
+  @media (max-width:860px){ .stat-row{grid-template-columns:repeat(2,1fr);} }
+  .stat{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:15px 16px;
+    box-shadow:var(--shadow); position:relative; overflow:hidden;
+  }
+  .stat::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent,var(--created));}
+  .stat .n{font-size:30px; font-weight:720; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1;}
+  .stat .l{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:7px; font-weight:600;}
+  .stat.s-total{--accent:var(--bomb);}
+  .stat.s-planted{--accent:var(--planted);}
+  .stat.s-triggered{--accent:var(--triggered);}
+  .stat.s-hits{--accent:var(--canary);}
+  .stat.alert .n{color:var(--triggered);}
+
+  /* ---------- Status + validation pills ---------- */
+  .pill{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700; padding:3px 9px; border-radius:999px; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap;}
+  .pill::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .pill.created{color:var(--created); background:var(--created-bg);}
+  .pill.planted{color:var(--planted); background:var(--planted-bg);}
+  .pill.triggered{color:var(--triggered); background:var(--triggered-bg);}
+  .pill.retired{color:var(--retired); background:var(--retired-bg);}
+
+  .val-badge{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap;}
+  .val-badge::before{content:""; width:7px; height:7px; border-radius:50%; background:currentColor;}
+  .val-badge.fresh{color:var(--ok); background:var(--ok-bg);}
+  .val-badge.amber{color:var(--amber); background:var(--amber-bg);}
+  .val-badge.red{color:var(--triggered); background:var(--triggered-bg);}
+  .val-badge.unvalidated{color:var(--triggered); background:var(--triggered-bg); border:1px dashed var(--triggered);}
+
+  .tag{display:inline-block; font-size:11px; font-weight:650; padding:2px 8px; border-radius:6px; background:var(--panel-3); color:var(--muted);}
+  .tag.shape{background:var(--bomb-bg); color:var(--bomb);}
+  .aud{font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; background:var(--bomb-bg); color:var(--bomb); border:1px solid var(--bomb-border);}
+
+  /* ---------- Bomb cards ---------- */
+  .bomb-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:14px;
+    box-shadow:var(--shadow); overflow:hidden; border-left:4px solid var(--created);
+  }
+  .bomb-card.st-planted{border-left-color:var(--planted);}
+  .bomb-card.st-triggered{border-left-color:var(--triggered);}
+  .bomb-card.st-retired{border-left-color:var(--retired); opacity:.72;}
+  .cc-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:15px 18px; flex-wrap:wrap;}
+  .cc-title{display:flex; flex-direction:column; gap:5px; min-width:0;}
+  .cc-codename{font-size:16px; font-weight:680; display:flex; align-items:center; gap:9px; flex-wrap:wrap;}
+  .cc-id{font-size:11.5px; color:var(--muted-2);}
+  .cc-meta{display:flex; gap:7px; align-items:center; flex-wrap:wrap;}
+  .cc-body{padding:0 18px 16px; border-top:1px solid var(--border-2);}
+  .cc-section{padding-top:13px;}
+  .cc-section > .h{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:7px; display:flex; align-items:center; gap:7px;}
+  .kv{display:grid; grid-template-columns:150px 1fr; gap:4px 12px; font-size:13px;}
+  .kv dt{color:var(--muted);}
+  .kv dd{margin:0; word-break:break-word;}
+
+  .variant{border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:8px; background:var(--panel-2);}
+  .variant .vtop{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; flex-wrap:wrap;}
+
+  .hit-line{display:flex; gap:8px; align-items:baseline; font-size:12.5px; padding:5px 0; border-bottom:1px dashed var(--border-2);}
+  .hit-line:last-child{border-bottom:none;}
+  .hit-line .when{color:var(--muted-2); font-size:11.5px; white-space:nowrap;}
+  .hit-badge{font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:5px; text-transform:uppercase;}
+  .hit-badge.sm{background:var(--bomb-bg); color:var(--bomb);}
+  .hit-badge.s3{background:var(--canary-bg); color:var(--canary);}
+
+  pre.code{
+    background:var(--code-bg); color:var(--code-text); border:1px solid var(--border); border-radius:var(--radius-sm);
+    padding:13px 14px; font-family:var(--mono); font-size:12.5px; line-height:1.6; overflow-x:auto; margin:0;
+    white-space:pre; -webkit-overflow-scrolling:touch;
+  }
+  .code-wrap{position:relative;}
+  .code-wrap .copy{position:absolute; top:8px; right:8px;}
+
+  .empty{
+    text-align:center; padding:48px 24px; color:var(--muted); border:1.5px dashed var(--border); border-radius:var(--radius); background:var(--panel-2);
+  }
+  .empty .ic{font-size:38px; margin-bottom:10px;}
+  .empty h3{color:var(--text); font-size:16px; margin-bottom:6px; text-transform:none; letter-spacing:0;}
+
+  .divider{height:1px; background:var(--border); margin:18px 0;}
+  .row-between{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+
+  .seg{display:inline-flex; background:var(--panel-3); border-radius:var(--radius-sm); padding:3px; gap:2px; flex-wrap:wrap;}
+  .seg button{background:none; border:none; padding:6px 12px; font-size:12.5px; font-weight:600; color:var(--muted); border-radius:6px;}
+  .seg button[aria-pressed="true"]{background:var(--panel); color:var(--text); box-shadow:var(--shadow);}
+
+  .radio-row{display:flex; gap:16px; flex-wrap:wrap; font-size:13.5px;}
+  .radio-row label{display:flex; gap:7px; align-items:center; cursor:pointer;}
+  .radio-row input{width:auto;}
+
+  .val-table{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px;}
+  .val-table th, .val-table td{padding:6px 8px; text-align:left; border-bottom:1px solid var(--border-2);}
+  .val-table th{font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted);}
+  .val-row-input td{padding:4px 4px;}
+  .val-row-input input, .val-row-input select{padding:6px 8px; font-size:12.5px;}
+
+  /* ---------- Report ---------- */
+  .report-head{border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); padding:18px 20px; margin-bottom:16px; box-shadow:var(--shadow);}
+  .report-head h3{font-size:20px; margin:0 0 2px; text-transform:none; letter-spacing:-.01em; color:var(--text);}
+  .report-head .meta{color:var(--muted); font-size:13px;}
+  .report-summary{display:flex; align-items:flex-start; gap:12px; background:var(--bomb-bg); border:1px solid var(--bomb-border); border-radius:var(--radius); padding:14px 16px; margin-bottom:16px;}
+  .report-summary .txt{flex:1; min-width:0; font-size:14.5px; line-height:1.5;}
+  .report-h{font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:22px 0 10px; font-weight:700;}
+  .breakdown{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;}
+  .breakdown .bd{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 13px; box-shadow:var(--shadow);}
+  .breakdown .bd .k{font-size:12.5px; color:var(--muted);}
+  .breakdown .bd .val{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:3px;}
+  .rtable-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow);}
+  table.rtable{width:100%; border-collapse:collapse; font-size:13px; background:var(--panel); min-width:640px;}
+  table.rtable th, table.rtable td{padding:9px 12px; text-align:left; border-bottom:1px solid var(--border-2); white-space:nowrap;}
+  table.rtable th{font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:var(--panel-2); position:sticky; top:0;}
+  table.rtable td.num{text-align:right; font-variant-numeric:tabular-nums;}
+  table.rtable tr:last-child td{border-bottom:none;}
+  table.rtable td.hit{color:var(--triggered); font-weight:700;}
+  .report-note{color:var(--muted-2); font-size:12px; margin-top:14px;}
+
+  @media print{
+    .app-header, nav.tabs, footer, .toast, .no-print, .mode-strip{display:none !important;}
+    body{background:#fff; color:#000; font-size:12px;}
+    main{padding:0; max-width:100%;}
+    .tabpanel{display:none !important;}
+    #tab-report.tabpanel{display:block !important;}
+    .report-head, .breakdown .bd, .rtable-wrap, .stat{box-shadow:none !important; border-color:#bbb !important;}
+    table.rtable th{position:static;}
+    #tab-report{animation:none !important;}
+  }
+
+  .toast{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--text); color:var(--bg); padding:11px 18px; border-radius:999px; font-size:13px; font-weight:600;
+    box-shadow:var(--shadow-lg); opacity:0; pointer-events:none; transition:.25s; z-index:50; max-width:90vw;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  footer{max-width:1180px; margin:0 auto; padding:0 24px 40px; color:var(--muted-2); font-size:12px; text-align:center;}
+  footer a{color:var(--muted);}
+  ::selection{background:color-mix(in srgb,var(--bomb) 30%, transparent);}
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="wrap">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">🧨</div>
+      <div>
+        <h1>Context Bombs <span style="font-weight:500; opacity:.85; font-size:13px;">· deter mode</span></h1>
+        <div class="tagline">Plant guardrail-tripping decoys, deter attacks — <span style="opacity:.9;">intent: deter</span></div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <a href="index.html" title="Back to mode chooser">← Home</a>
+      <a href="how-it-works.html" title="A plain-language explainer of what this is and how it works">? How it works</a>
+      <a href="compliance.html" title="How this maps to NIST, GDPR, ISO, EU AI Act and more">✓ Compliance</a>
+      <button id="btnExport" title="Download all artefacts (both modes) as a JSON file">⭳ Export</button>
+      <button id="btnImport" title="Load artefacts from a JSON file">⭱ Import</button>
+      <button id="btnTheme" title="Switch light / dark">◑ Theme</button>
+      <input type="file" id="fileImport" accept="application/json" class="visually-hidden">
+    </div>
+  </div>
+</header>
+
+<div class="mode-strip">🧨 <strong>Deter mode.</strong> These payloads are built to make an AI <em>refuse</em>. Plant them only in decoy resources you own.</div>
+<div class="disclaimer-strip">
+  <strong>Defensive security tool.</strong> Everything it produces is a fabricated decoy — fully synthetic, never real company data. Runs entirely in your browser; nothing is sent anywhere.
+</div>
+
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+  <button role="tab" data-tab="generate" aria-selected="false">Generate</button>
+  <button role="tab" data-tab="plant" aria-selected="false">Plant</button>
+  <button role="tab" data-tab="detect" aria-selected="false">Tripwire hits</button>
+  <button role="tab" data-tab="report" aria-selected="false">Report</button>
+  <button role="tab" data-tab="golive" aria-selected="false">Go live (AWS)</button>
+</nav>
+
+<main>
+  <!-- ============ OVERVIEW ============ -->
+  <section class="tabpanel active" id="tab-overview" role="tabpanel">
+    <div class="section-title"><h2>Overview</h2></div>
+    <p class="section-sub">Every context bomb you've built, where it's planted, and whether its tripwire has fired. Watch the validation freshness — a stale bomb relies on safety behaviour that may have changed.</p>
+    <div class="stat-row" id="statRow"></div>
+    <div id="overviewList"></div>
+  </section>
+
+  <!-- ============ GENERATE ============ -->
+  <section class="tabpanel" id="tab-generate" role="tabpanel">
+    <div class="section-title"><h2>Build a context bomb</h2></div>
+    <p class="section-sub">This is a framework, not a payload generator. You supply the string that trips the model; the console wraps it in a realistic decoy resource, tracks where you plant it, records what you validated it against, and correlates the alert when it's read.</p>
+
+    <div class="bomb-box">
+      <strong>What your payload needs to do</strong>
+      A context bomb is a short string that, when read by an AI agent mid-task, triggers its safety guardrails so it refuses and abandons the run. Efficacy against a given model is empirical — it is established by <em>testing</em>, not by a template. This tool will not invent one for you. Write or paste a payload you have tested, and record what you tested it against below.
+      <ul>
+        <li>Prior art: Tracebit's July 2026 research planted bombs in canary Secrets Manager values and cut agent attack success ~90% — <a href="https://agentic.tracebit.com/context-bombs" target="_blank" rel="noopener">agentic.tracebit.com/context-bombs</a>.</li>
+      </ul>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h3>1 · The payload</h3>
+        <div class="field">
+          <label class="field-label" for="genPayload">Payload string</label>
+          <textarea id="genPayload" placeholder="Paste the guardrail-tripping string you have tested…"></textarea>
+          <div class="field-hint">This exact text is what a reading agent ingests. Keep it to what you have validated.</div>
+        </div>
+        <div class="field">
+          <label class="field-label">Payload source</label>
+          <div class="radio-row">
+            <label><input type="radio" name="paysrc" value="user_supplied" checked> User-supplied</label>
+            <label><input type="radio" name="paysrc" value="builtin_reference"> Built-in reference</label>
+          </div>
+          <div class="field-hint">Provenance only. "Built-in reference" means you pasted it from a published reference set — it makes no claim of efficacy against your attacker.</div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="genGuardrail">Guardrail dependency</label>
+          <input type="text" id="genGuardrail" placeholder="e.g. relies on Anthropic/OpenAI refusal on credential-exfil intent">
+          <div class="field-hint">Which vendor safety behaviour does this payload rely on? Named plainly so you know what a vendor change would break.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>2 · Shape &amp; assets</h3>
+        <div class="field">
+          <label class="field-label" for="genShape">Decoy resource shape</label>
+          <select id="genShape">
+            <option value="secrets_manager">Secrets Manager secret value (JSON)</option>
+            <option value="env">Environment variable block</option>
+            <option value="aws_credentials">AWS credentials file</option>
+            <option value="dns_txt">DNS TXT record</option>
+            <option value="iam_role">IAM role description</option>
+          </select>
+          <div class="field-hint" id="shapeHint"></div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="genLabel">Bomb label <span style="text-transform:none; font-weight:500;">(optional)</span></label>
+          <input type="text" id="genLabel" placeholder="e.g. prod-db-secret decoy">
+        </div>
+        <div class="field">
+          <label class="field-label" for="genVariants">Number of variants <span style="text-transform:none; font-weight:500;">(per-asset)</span></label>
+          <select id="genVariants">
+            <option value="1">1 — single asset</option>
+            <option value="2">2</option>
+            <option value="3" selected>3 — recommended</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+          <div class="field-hint">Same payload, distinct decoy assets. If one asset's exact bytes get fingerprinted and stripped, the others stay live.</div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="genAssets">Asset names <span style="text-transform:none; font-weight:500;">(optional)</span></label>
+          <input type="text" id="genAssets" placeholder="e.g. prod-db, ci-deploy, backup-svc">
+          <div class="field-hint">Comma-separated, in order. Leave blank to auto-name asset-1, asset-2…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>3 · Validation record</h3>
+      <p class="panel-lead">The control's strength is owned by a model vendor's safety training. A bomb with no validation is a guess. Record at least one model you tested this payload against — or save it explicitly unvalidated, and it will be flagged red everywhere until you validate it.</p>
+      <table class="val-table" id="valTable">
+        <thead><tr><th>Model</th><th>Version</th><th>Date tested</th><th>Result</th><th></th></tr></thead>
+        <tbody id="valRows"></tbody>
+      </table>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn secondary small" id="btnAddVal">+ Add validation entry</button>
+        <label style="display:flex; gap:7px; align-items:center; font-size:13px; color:var(--muted);">
+          <input type="checkbox" id="genUnvalidated" style="width:auto;"> Save without validation (flag as unvalidated)
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="btn-row">
+        <button class="btn" id="btnGenerate">🧨 Build bomb</button>
+        <button class="btn secondary" id="btnRegen" style="display:none;">↻ Rebuild</button>
+      </div>
+    </div>
+
+    <div class="panel" id="genPreviewPanel" style="display:none;">
+      <div class="row-between" style="margin-bottom:6px;">
+        <h3 style="margin:0;">Preview</h3>
+        <span class="tag" id="genPreviewId"></span>
+      </div>
+      <div id="genPreview"></div>
+      <div class="divider"></div>
+      <div class="btn-row">
+        <button class="btn" id="btnSaveBomb">✓ Save to library</button>
+        <span class="field-hint" style="margin:0;">Saved bombs appear on the Overview and Plant tabs.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PLANT ============ -->
+  <section class="tabpanel" id="tab-plant" role="tabpanel">
+    <div class="section-title"><h2>Plant a context bomb</h2></div>
+    <p class="section-sub">Pick a bomb and a variant, copy the ready-made decoy resource into a place you own that an attacking agent would read, then record where you put it so a read is traceable.</p>
+
+    <div class="bomb-box">
+      <strong>Plant only in decoy resources you own.</strong>
+      It has no effect on, and must not be placed in, systems you do not control. It will affect <em>any</em> AI agent that reads it — including your own legitimate ones. A coding agent or internal automation that reads the secret during routine work will refuse, and the engineer will have no idea why. Plan for that.
+    </div>
+
+    <div class="panel">
+      <div class="grid-2">
+        <div class="field">
+          <label class="field-label" for="plantBomb">Bomb</label>
+          <select id="plantBomb"></select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="plantVariant">Variant / asset</label>
+          <select id="plantVariant"></select>
+        </div>
+      </div>
+      <div class="code-wrap">
+        <button class="btn small secondary copy" data-copy="#plantText">⧉ Copy</button>
+        <pre class="code" id="plantText" style="min-height:120px;"></pre>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Record where you planted it</h3>
+      <p class="panel-lead">This is what makes a future read traceable. It updates the bomb's status to "planted".</p>
+      <div class="grid-3">
+        <div class="field">
+          <label class="field-label" for="plantTarget">Target system</label>
+          <select id="plantTarget">
+            <option>AWS Secrets Manager</option>
+            <option>SSM Parameter Store</option>
+            <option>Environment variable</option>
+            <option>Credentials file on host</option>
+            <option>DNS TXT record</option>
+            <option>IAM role description</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="plantLocation">Location (ARN, name, or host)</label>
+          <input type="text" id="plantLocation" placeholder="arn:aws:secretsmanager:…">
+        </div>
+        <div class="field">
+          <label class="field-label" for="plantDate">Date planted</label>
+          <input type="text" id="plantDate" readonly>
+        </div>
+      </div>
+      <button class="btn" id="btnRecordPlant">✓ Record plant</button>
+    </div>
+  </section>
+
+  <!-- ============ TRIPWIRE HITS ============ -->
+  <section class="tabpanel" id="tab-detect" role="tabpanel">
+    <div class="section-title"><h2>Tripwire hits</h2></div>
+    <p class="section-sub">When the decoy resource is read, your AWS alert (SNS) fires. Log it here against the bomb it belongs to.</p>
+
+    <div class="bomb-box">
+      <strong>What a hit tells you — and what it doesn't.</strong>
+      We can observe that the bomb was <em>read</em>. We cannot observe from our side whether the attacking agent then refused. Outcome is <em>inferred</em> from the absence of subsequent activity, not measured. A read is a tripwire, not a confirmed deterrence.
+    </div>
+
+    <div class="panel">
+      <h3>Log a tripwire hit</h3>
+      <p class="panel-lead">Paste the alert JSON — it handles both Secrets Manager reads (<span class="mono">GetSecretValue</span>) and S3 reads (<span class="mono">GetObject</span>) — or type the details.</p>
+      <div class="field">
+        <label class="field-label" for="hitJson">Paste alert JSON <span style="text-transform:none; font-weight:500;">(optional — fills the fields below)</span></label>
+        <textarea id="hitJson" placeholder='{"bomb_id":"bomb_…","source_ip":"…","event_name":"GetSecretValue","event_time":"…","user_agent":"…","secret_id":"…"}' style="min-height:70px;"></textarea>
+        <div class="field-hint"><button class="btn tiny secondary" id="btnParseHit">Fill fields from JSON</button></div>
+      </div>
+      <div class="grid-3">
+        <div class="field">
+          <label class="field-label" for="hitBomb">Bomb</label>
+          <select id="hitBomb"></select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="hitIp">Source IP</label>
+          <input type="text" id="hitIp" placeholder="203.0.113.7">
+        </div>
+        <div class="field">
+          <label class="field-label" for="hitEvent">Event</label>
+          <select id="hitEvent">
+            <option>GetSecretValue</option>
+            <option>BatchGetSecretValue</option>
+            <option>GetParameter</option>
+            <option>GetObject</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-3">
+        <div class="field">
+          <label class="field-label" for="hitResource">Resource (ARN / name)</label>
+          <input type="text" id="hitResource" placeholder="arn:aws:secretsmanager:…">
+        </div>
+        <div class="field">
+          <label class="field-label" for="hitUa">User agent</label>
+          <input type="text" id="hitUa" placeholder="aws-sdk-python/… or an agent UA">
+        </div>
+        <div class="field">
+          <label class="field-label" for="hitTime">Read time</label>
+          <input type="text" id="hitTime" placeholder="auto if blank">
+        </div>
+      </div>
+      <button class="btn" id="btnRecordHit">✓ Record tripwire hit</button>
+    </div>
+  </section>
+
+  <!-- ============ REPORT ============ -->
+  <section class="tabpanel" id="tab-report" role="tabpanel">
+    <div class="row-between" style="margin-bottom:4px;">
+      <div class="section-title"><h2>Deterrence report</h2></div>
+      <div class="btn-row no-print">
+        <select id="reportRange" title="Filter by when the bomb was created" style="width:auto; padding:7px 10px;">
+          <option value="all">All time</option>
+          <option value="month">This month</option>
+          <option value="30d">Last 30 days</option>
+          <option value="quarter">This quarter</option>
+          <option value="year">This year</option>
+        </select>
+        <button class="btn secondary small" id="btnPrintReport">🖨 Print / Save PDF</button>
+        <button class="btn secondary small" id="btnCsvReport">⤓ Download CSV</button>
+      </div>
+    </div>
+    <p class="section-sub no-print">Bombs planted, reads observed, time from read to alert, and validation freshness across the estate.</p>
+    <div id="reportBody"></div>
+  </section>
+
+  <!-- ============ GO LIVE ============ -->
+  <section class="tabpanel" id="tab-golive" role="tabpanel">
+    <div class="section-title"><h2>Go live: real Secrets Manager decoys &amp; alerting</h2></div>
+    <p class="section-sub">This console does the human side — building, planting, tracking and correlating. Creating real decoy secrets and wiring the read alerts needs AWS credentials, so hand these to whoever runs the Python tool.</p>
+
+    <div class="warn-box">
+      <strong>No outbound probe for bombs.</strong>
+      There is nothing to probe — a bomb succeeds by making a reader refuse, so <span class="mono">canary probe</span> skips deter artefacts entirely. Never put a bomb payload into a public AI tool.
+    </div>
+
+    <div class="panel">
+      <h3>1 · One-time setup</h3>
+      <div class="code-wrap">
+        <button class="btn small secondary copy" data-copy="#cliSetup">⧉ Copy</button>
+        <pre class="code" id="cliSetup">git clone https://github.com/Ray51773/Canery-.git
+cd Canery-
+python3 -m pip install -r requirements.txt
+cp config/config.example.yaml config/config.yaml   # then edit for your AWS</pre>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>2 · Provision the read alerting (once)</h3>
+      <p class="panel-lead">Wires object-level S3 reads <em>and</em> Secrets Manager <span class="mono">GetSecretValue</span> reads on your decoy resources to the same SNS topic.</p>
+      <div class="code-wrap">
+        <button class="btn small secondary copy" data-copy="#cliProvision">⧉ Copy</button>
+        <pre class="code" id="cliProvision">python3 -m canary provision
+# then attach an alert destination:
+aws sns subscribe --topic-arn &lt;arn-printed-above&gt; \
+    --protocol email --notification-endpoint security@yourcompany.com</pre>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>3 · Create your bombs as real decoy secrets</h3>
+      <p class="panel-lead">Mirrors the bombs in this console. <span class="mono">create --intent deter</span> creates the real Secrets Manager secret with your payload as its value and swaps the real ARN back into the exported artefact. Keep the payload in a file so it never lands in shell history.</p>
+      <div class="code-wrap">
+        <button class="btn small secondary copy" data-copy="#cliCreate">⧉ Copy</button>
+        <pre class="code" id="cliCreate"></pre>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>4 · Ingest reads &amp; report</h3>
+      <div class="code-wrap">
+        <button class="btn small secondary copy" data-copy="#cliIngest">⧉ Copy</button>
+        <pre class="code" id="cliIngest">python3 -m canary ingest              # pull S3 + Secrets Manager reads into the dashboard
+python3 -m canary status              # both modes, each with its own criteria</pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Context Bombs · runs fully offline in your browser · data saved only in this browser's local storage ·
+  part of the <a href="https://github.com/Ray51773/Canery-" target="_blank" rel="noopener">AI Data-Leakage Canary System</a>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   Decoy resource shapes. The payload is placed where a reading agent would
+   ingest it. Everything else is synthetic filler so the resource looks real.
+   ========================================================================= */
+const SHAPES = {
+  secrets_manager: {
+    label: "Secrets Manager secret value (JSON)",
+    hint: "A JSON secret value — the payload rides in a field the reader parses.",
+    wrap: (payload, asset) => JSON.stringify({
+      username: "svc-" + asset,
+      engine: "postgres",
+      host: asset + ".db.internal",
+      port: 5432,
+      note: payload
+    }, null, 2)
+  },
+  env: {
+    label: "Environment variable block",
+    hint: "A dotenv-style block. The payload is a quoted value.",
+    wrap: (payload, asset) =>
+      `# ${asset} service environment\nSERVICE_NAME=${asset}\nLOG_LEVEL=info\nREGION=us-east-1\nDEPLOY_NOTE="${payload.replace(/"/g,'\\"')}"`
+  },
+  aws_credentials: {
+    label: "AWS credentials file",
+    hint: "An ~/.aws/credentials profile. The payload sits in a comment a reader scans.",
+    wrap: (payload, asset) =>
+      `[${asset}]\naws_access_key_id=AKIAEXAMPLE0DECOY000\naws_secret_access_key=wJalrDECOYnotarealkeyEXAMPLEKEY0000decoy0\n# operator note: ${payload}`
+  },
+  dns_txt: {
+    label: "DNS TXT record",
+    hint: "A TXT record value at a decoy name.",
+    wrap: (payload, asset) =>
+      `_note.${asset}.decoy.example.com.   300   IN   TXT   "${payload.replace(/"/g,'\\"')}"`
+  },
+  iam_role: {
+    label: "IAM role description",
+    hint: "The Description field of a decoy IAM role.",
+    wrap: (payload, asset) =>
+      `Role name: ${asset}-automation-role\nDescription: ${payload}`
+  }
+};
+
+/* ---------- small utilities ---------- */
+const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const hex = n => { let s=""; for(let i=0;i<n;i++) s+="0123456789abcdef"[Math.floor(Math.random()*16)]; return s; };
+const nowISO = () => new Date().toISOString().replace(/\.\d+Z$/,"Z");
+const todayStr = () => new Date().toISOString().slice(0,10);
+const slug = s => String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"") || "asset";
+
+/* =========================================================================
+   State (persisted to the shared localStorage registry)
+   ========================================================================= */
+const LS_KEY = "canary_console_v1";
+const MODE_INTENT = "deter";
+let STATE = load();
+
+function load(){
+  let s = { canaries: [] };
+  try{ const raw = localStorage.getItem(LS_KEY); if(raw) s = JSON.parse(raw); }catch(e){}
+  if(!Array.isArray(s.canaries)) s.canaries = [];
+  // Migration: every artefact carries an immutable intent. Records without one
+  // predate deter mode and are tracer canaries by definition.
+  s.canaries.forEach(c=>{ if(!c.intent) c.intent = "detect"; });
+  if(!s.company || typeof s.company !== "object") s.company = {};
+  return s;
+}
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(STATE)); }catch(e){ toast("Could not save — browser storage full or blocked"); } }
+function inMode(c){ return (c.intent||"detect") === MODE_INTENT; }
+function bombs(){ return STATE.canaries.filter(inMode); }
+function currentBomb(id){ return STATE.canaries.find(c=>c.id===id && inMode(c)); }
+function totalHits(b){ return (b.hits?.length||0); }
+
+/* =========================================================================
+   Validation freshness — the only signal that a vendor safety change has
+   silently degraded the control. Amber at 90 days, red at 180, or unvalidated.
+   ========================================================================= */
+function latestValidation(b){
+  let best = null;
+  (b.last_validated_against||[]).forEach(v=>{
+    const d = new Date(v.date);
+    if(!isNaN(d) && (!best || d > best)) best = d;
+  });
+  return best;
+}
+function valState(b){
+  const best = latestValidation(b);
+  if(!best) return { state:"unvalidated", label:"unvalidated" };
+  const days = Math.floor((Date.now() - best.getTime())/86400000);
+  let state = "fresh";
+  if(days >= 180) state = "red"; else if(days >= 90) state = "amber";
+  const models = [...new Set((b.last_validated_against||[]).map(v=>v.model).filter(Boolean))];
+  return { state, days, date:best, models };
+}
+function valBadge(b){
+  const v = valState(b);
+  if(v.state === "unvalidated")
+    return `<span class="val-badge unvalidated" title="No model recorded — the control is unproven">⚠ unvalidated</span>`;
+  const dstr = v.date.toISOString().slice(0,10);
+  const models = v.models.length ? v.models.join(", ") : "—";
+  const word = v.state==="red" ? "stale — re-validate" : v.state==="amber" ? "ageing" : "validated";
+  const title = `Last validated ${dstr} (${v.days} days ago) against ${models}`;
+  return `<span class="val-badge ${v.state}" title="${esc(title)}">${word} ${dstr} · ${esc(models)}</span>`;
+}
+
+/* =========================================================================
+   Generation
+   ========================================================================= */
+let draft = null;
+let valEntries = [];   // rows in the validation builder
+
+function assetNames(nVariants, raw, label){
+  const given = (raw||"").split(",").map(s=>slug(s.trim())).filter(Boolean);
+  const base = slug(label) || "asset";
+  const out = [];
+  for(let i=0;i<Math.max(1,nVariants);i++) out.push(given[i] || `${base}-${i+1}`);
+  return out;
+}
+function buildBomb(){
+  const payload = $("#genPayload").value.trim();
+  if(!payload){ toast("Paste a payload string first"); return null; }
+  const shape = $("#genShape").value;
+  const source = ($$('input[name="paysrc"]').find(r=>r.checked)||{}).value || "user_supplied";
+  const guardrail = $("#genGuardrail").value.trim();
+  const label = $("#genLabel").value.trim();
+  const n = parseInt($("#genVariants").value,10);
+  const assets = assetNames(n, $("#genAssets").value, label || "asset");
+  const wrap = SHAPES[shape].wrap;
+  const variants = assets.map(a => ({ id:"asset_"+hex(10), asset:a, text: wrap(payload, a) }));
+
+  // Collect completed validation rows from the builder.
+  const validations = collectValidations();
+  const unvalidated = $("#genUnvalidated").checked;
+  if(!validations.length && !unvalidated){
+    toast("Add a validation entry, or tick “save without validation”");
+    return null;
+  }
+
+  return {
+    id: "bomb_"+hex(12),
+    intent: "deter",
+    label: label || (SHAPES[shape].label + " decoy"),
+    payload,
+    payload_source: source,
+    shape,
+    guardrail_dependency: guardrail,
+    last_validated_against: validations,
+    status: "created",
+    created: nowISO(),
+    variants,
+    plants: [],
+    hits: []
+  };
+}
+function collectValidations(){
+  const out = [];
+  $$("#valRows tr.val-row-input").forEach(tr=>{
+    const model = $(".v-model", tr).value.trim();
+    const version = $(".v-version", tr).value.trim();
+    const date = $(".v-date", tr).value.trim();
+    const result = $(".v-result", tr).value;
+    if(model && date) out.push({ model, version, date, result });
+  });
+  return out;
+}
+function addValRow(){
+  const tr = document.createElement("tr");
+  tr.className = "val-row-input";
+  tr.innerHTML =
+    `<td><input class="v-model" type="text" placeholder="e.g. Claude Opus 4.8"></td>
+     <td><input class="v-version" type="text" placeholder="point release"></td>
+     <td><input class="v-date" type="date" value="${todayStr()}"></td>
+     <td><select class="v-result"><option value="refused">refused (good)</option><option value="partial">partial</option><option value="complied">complied (bad)</option></select></td>
+     <td><button class="btn tiny secondary v-del" type="button">✕</button></td>`;
+  $("#valRows").appendChild(tr);
+  $(".v-del", tr).addEventListener("click", ()=>{ tr.remove(); });
+}
+
+function renderPreview(){
+  if(!draft) return;
+  $("#genPreviewPanel").style.display="";
+  $("#btnRegen").style.display="";
+  $("#genPreviewId").textContent = draft.id;
+  $("#genPreview").innerHTML = `
+    <div class="cc-codename" style="margin-bottom:8px;">${esc(draft.label)}
+      <span class="tag shape">${esc(SHAPES[draft.shape].label)}</span>
+      ${valBadge(draft)}</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:12px;">
+      Payload source: <b>${esc(draft.payload_source==="builtin_reference"?"built-in reference":"user-supplied")}</b>${draft.guardrail_dependency?` · depends on: ${esc(draft.guardrail_dependency)}`:""}.
+      ${draft.variants.length} decoy asset${draft.variants.length>1?"s":""}, same payload — fingerprinting one won't kill the rest.
+    </div>
+    ${draft.variants.map(v=>`
+      <div class="variant">
+        <div class="vtop"><span class="aud">${esc(v.asset)}</span><span class="cc-id mono">${esc(v.id)}</span></div>
+        <pre class="code" style="margin-top:6px;">${esc(v.text)}</pre>
+      </div>`).join("")}`;
+}
+
+/* =========================================================================
+   Rendering
+   ========================================================================= */
+function statusPill(s){ return `<span class="pill ${s}">${s}</span>`; }
+
+function renderStats(){
+  const bs = bombs();
+  const planted = bs.filter(b=>b.status==="planted"||b.status==="triggered").length;
+  const triggered = bs.filter(b=>b.status==="triggered").length;
+  const reads = bs.reduce((a,b)=>a+totalHits(b),0);
+  $("#statRow").innerHTML = `
+    <div class="stat s-total"><div class="n">${bs.length}</div><div class="l">Context bombs</div></div>
+    <div class="stat s-planted"><div class="n">${planted}</div><div class="l">Planted</div></div>
+    <div class="stat s-triggered ${triggered?'alert':''}"><div class="n">${triggered}</div><div class="l">Tripwires fired</div></div>
+    <div class="stat s-hits ${reads?'alert':''}"><div class="n">${reads}</div><div class="l">Reads observed</div></div>`;
+}
+
+function bombCard(b){
+  const plants = b.plants||[], hits = b.hits||[];
+  const variantsHtml = b.variants.map(v=>`
+    <div class="variant">
+      <div class="vtop"><span class="aud">${esc(v.asset)}</span><span class="cc-id mono">${esc(v.id)}</span></div>
+      <pre class="code" style="margin-top:6px;">${esc(v.text)}</pre>
+    </div>`).join("");
+  const plantsHtml = plants.length ? plants.map(p=>`
+    <div class="hit-line"><span class="tag">${esc(p.target)}</span>
+      <span style="flex:1; min-width:0; word-break:break-word;">${p.location?esc(p.location):'<span style="color:var(--muted-2)">no location noted</span>'}</span>
+      <span class="when">${esc((p.at||"").slice(0,10))}</span></div>`).join("")
+    : `<div style="color:var(--muted-2); font-size:12.5px;">Not planted yet.</div>`;
+  const hitsHtml = hits.map(h=>{
+    const isS3 = (h.event_name||"").toLowerCase().includes("object");
+    return `<div class="hit-line"><span class="hit-badge ${isS3?'s3':'sm'}">${isS3?'S3':'SECRET'}</span>
+      <span style="flex:1; min-width:0;">${esc(h.event_name||"read")} from <span class="mono">${esc(h.source_ip||"?")}</span>${h.resource?` · <span class="mono" style="color:var(--muted)">${esc((h.resource||"").slice(0,40))}</span>`:""}</span>
+      <span class="when">${esc((h.event_time||h.at||"").slice(0,16).replace("T"," "))}</span></div>`;
+  }).join("");
+
+  return `<article class="bomb-card st-${b.status}" data-id="${b.id}">
+    <div class="cc-head">
+      <div class="cc-title">
+        <div class="cc-codename">${esc(b.label)} ${statusPill(b.status)}</div>
+        <div class="cc-meta">
+          <span class="tag shape">${esc(SHAPES[b.shape]?.label||b.shape)}</span>
+          ${valBadge(b)}
+          <span class="cc-id mono">${esc(b.id)}</span>
+          <span class="cc-id">· ${esc((b.created||"").slice(0,10))}</span>
+        </div>
+      </div>
+      <div class="btn-row">
+        ${b.status!=="retired" ? `<button class="btn tiny secondary" data-act="retire" data-id="${b.id}">Retire</button>` : ""}
+        <button class="btn tiny danger" data-act="delete" data-id="${b.id}">Delete</button>
+      </div>
+    </div>
+    <div class="cc-body">
+      <div class="cc-section">
+        <div class="h">Payload · ${esc(b.payload_source==="builtin_reference"?"built-in reference":"user-supplied")}</div>
+        <div class="kv">
+          <dt>Guardrail dependency</dt><dd>${b.guardrail_dependency?esc(b.guardrail_dependency):'<span style="color:var(--muted-2)">not recorded</span>'}</dd>
+        </div>
+      </div>
+      <div class="cc-section">
+        <div class="h">Decoy assets · ${b.variants.length}</div>
+        ${variantsHtml}
+      </div>
+      <div class="cc-section">
+        <div class="h">Planted at</div>
+        ${plantsHtml}
+      </div>
+      ${hits.length ? `<div class="cc-section">
+        <div class="h" style="color:var(--triggered)">⚠ Reads observed (${hits.length})</div>
+        ${hitsHtml}
+        <div class="report-note">A read is a tripwire, not confirmed deterrence — the refusal is inferred, not measured.</div>
+      </div>` : ""}
+    </div>
+  </article>`;
+}
+
+function emptyState(title, body){
+  return `<div class="empty">
+    <div class="ic" aria-hidden="true">🧨</div>
+    <h3>${esc(title)}</h3>
+    <p style="max-width:460px; margin:0 auto 16px;">${esc(body)}</p>
+    <button class="btn" data-goto="generate">🧨 Build a context bomb</button>
+  </div>`;
+}
+function renderOverview(){
+  renderStats();
+  const el = $("#overviewList");
+  const mine = bombs();
+  if(!mine.length){
+    el.innerHTML = emptyState("No context bombs yet",
+      "Build your first bomb from a payload you've tested, plant it in a decoy resource you own, and watch this space for reads.");
+    return;
+  }
+  const order = {triggered:0, planted:1, created:2, retired:3};
+  const sorted = [...mine].sort((a,b)=> (order[a.status]-order[b.status]) || (b.created||"").localeCompare(a.created||""));
+  el.innerHTML = sorted.map(bombCard).join("");
+}
+
+/* ---------- Plant ---------- */
+function fillBombSelect(sel){
+  const el = $(sel);
+  const opts = bombs().filter(b=>b.status!=="retired");
+  el.innerHTML = opts.length ? opts.map(b=>`<option value="${b.id}">${esc(b.label)} — ${esc(b.id)}</option>`).join("")
+    : `<option value="">— no bombs yet —</option>`;
+}
+function refreshPlantVariants(){
+  const b = currentBomb($("#plantBomb").value);
+  const el = $("#plantVariant");
+  if(!b){ el.innerHTML=`<option value="">—</option>`; renderPlantText(); return; }
+  el.innerHTML = b.variants.map(v=>`<option value="${v.id}">${esc(v.asset)} — ${esc(v.id)}</option>`).join("");
+  renderPlantText();
+}
+function renderPlantText(){
+  const b = currentBomb($("#plantBomb").value);
+  const pre = $("#plantText");
+  if(!b){ pre.textContent = "Build and save a bomb first (Generate tab)."; return; }
+  const v = b.variants.find(x=>x.id===$("#plantVariant").value) || b.variants[0];
+  pre.textContent = v ? v.text : "";
+}
+function recordPlant(){
+  const b = currentBomb($("#plantBomb").value);
+  if(!b){ toast("No bomb selected"); return; }
+  b.plants = b.plants||[];
+  b.plants.push({ target:$("#plantTarget").value, location:$("#plantLocation").value.trim(), at:nowISO() });
+  if(b.status==="created") b.status="planted";
+  save(); toast("Plant recorded — status is now “planted”");
+  $("#plantLocation").value="";
+  refreshAll();
+}
+
+/* ---------- Tripwire hits ---------- */
+function parseHitJson(){
+  try{
+    const raw = JSON.parse($("#hitJson").value);
+    const p = raw.Message ? JSON.parse(raw.Message) : raw; // unwrap SNS envelope
+    const id = p.bomb_id || p.canary_id;
+    if(id){ const opt=[...$("#hitBomb").options].find(o=>o.value===id); if(opt) $("#hitBomb").value=id; }
+    if(p.source_ip) $("#hitIp").value=p.source_ip;
+    if(p.user_agent) $("#hitUa").value=p.user_agent;
+    if(p.event_time) $("#hitTime").value=p.event_time;
+    const resource = p.secret_id || p.resource || p.parameter_name || (p.bucket?`${p.bucket}/${p.key||""}`:"");
+    if(resource) $("#hitResource").value=resource;
+    if(p.event_name){ const o=[...$("#hitEvent").options].find(o=>o.value===p.event_name); if(o) $("#hitEvent").value=p.event_name; }
+    toast("Fields filled from alert JSON");
+  }catch(e){ toast("Couldn't read that JSON — check it's a valid alert"); }
+}
+function recordHit(){
+  const b = currentBomb($("#hitBomb").value);
+  if(!b){ toast("Select which bomb this read belongs to"); return; }
+  b.hits = b.hits||[];
+  b.hits.push({
+    source_ip:$("#hitIp").value.trim(), user_agent:$("#hitUa").value.trim(),
+    event_name:$("#hitEvent").value, resource:$("#hitResource").value.trim(),
+    event_time:$("#hitTime").value.trim()||nowISO(), at:nowISO()
+  });
+  b.status="triggered";
+  save(); toast("Tripwire hit recorded — bomb marked “triggered”");
+  ["#hitJson","#hitIp","#hitUa","#hitTime","#hitResource"].forEach(s=>$(s).value="");
+  refreshAll();
+}
+
+function retireBomb(id){ const b=currentBomb(id); if(b){ b.status="retired"; save(); refreshAll(); toast("Bomb retired"); } }
+function deleteBomb(id){
+  const b=currentBomb(id); if(!b) return;
+  if(!confirm(`Delete ${b.label} (${b.id})? This can't be undone.`)) return;
+  STATE.canaries = STATE.canaries.filter(x=>x.id!==id); save(); refreshAll(); toast("Bomb deleted");
+}
+
+/* ---------- Go-live CLI ---------- */
+function renderCli(){
+  const active = bombs().filter(b=>b.status!=="retired");
+  const lines = active.length
+    ? active.map(b=>{
+        const assetFlags = b.variants.map(v=>`--asset ${v.asset}`).join(" ");
+        return `python3 -m canary create --intent deter --shape ${b.shape} --variants ${b.variants.length} ${assetFlags} --payload-file ${slug(b.label)||b.id}.txt`;
+      }).join("\n")
+    : "# Build and save some bombs first — their create commands appear here.\n# Keep each payload in its own file so it never lands in shell history.";
+  $("#cliCreate").textContent = lines;
+}
+
+/* ---------- Report ---------- */
+function rangeStart(range){
+  const now = new Date();
+  if(range==="month") return new Date(now.getFullYear(), now.getMonth(), 1);
+  if(range==="30d"){ const d=new Date(now); d.setDate(d.getDate()-30); return d; }
+  if(range==="quarter") return new Date(now.getFullYear(), Math.floor(now.getMonth()/3)*3, 1);
+  if(range==="year") return new Date(now.getFullYear(), 0, 1);
+  return null;
+}
+function readToAlertMins(h){
+  const r = new Date(h.event_time||0), a = new Date(h.at||0);
+  if(isNaN(r)||isNaN(a)) return null;
+  const m = (a.getTime()-r.getTime())/60000;
+  return m>=0 ? m : null;
+}
+function fmtDuration(mins){
+  if(mins==null) return "—";
+  if(mins < 1) return "<1 min";
+  if(mins < 90) return Math.round(mins) + " min";
+  if(mins < 60*48) return Math.round(mins/60) + " h";
+  return Math.round(mins/1440) + " d";
+}
+function reportData(range){
+  const start = rangeStart(range);
+  const bs = bombs().filter(b=> !start || new Date(b.created||0) >= start);
+  const byStatus = {created:0, planted:0, triggered:0, retired:0};
+  const byShape = {}, valDist = {fresh:0, amber:0, red:0, unvalidated:0};
+  let assets=0, plants=0, reads=0;
+  const alertMins = [];
+  bs.forEach(b=>{
+    byStatus[b.status] = (byStatus[b.status]||0) + 1;
+    byShape[b.shape] = (byShape[b.shape]||0) + 1;
+    valDist[valState(b).state]++;
+    assets += (b.variants||[]).length;
+    plants += (b.plants||[]).length;
+    (b.hits||[]).forEach(h=>{ reads++; const m=readToAlertMins(h); if(m!=null) alertMins.push(m); });
+  });
+  alertMins.sort((a,b)=>a-b);
+  const median = alertMins.length ? alertMins[Math.floor((alertMins.length-1)/2)] : null;
+  return { bs, byStatus, byShape, valDist, assets, plants, reads,
+           plantedCount: byStatus.planted + byStatus.triggered, medianAlert: median };
+}
+const RANGE_LABEL = {all:"all time", month:"this month", "30d":"the last 30 days", quarter:"this quarter", year:"this year"};
+function renderReport(){
+  const range = ($("#reportRange") && $("#reportRange").value) || "all";
+  const d = reportData(range);
+  const when = new Date().toLocaleString();
+  if(!bombs().length){
+    $("#reportBody").innerHTML = emptyState("Nothing to report yet",
+      "Once you've built and planted bombs, this page summarizes how many are in play, how many reads fired, and how fresh your validations are.");
+    return;
+  }
+  if(!d.bs.length){
+    $("#reportBody").innerHTML = `<div class="report-summary"><div class="txt">No bombs created in ${esc(RANGE_LABEL[range]||"this period")}.</div></div>`;
+    return;
+  }
+  const stale = d.valDist.red + d.valDist.unvalidated;
+  const summaryText = `${d.bs.length} bomb${d.bs.length===1?"":"s"} created, ${d.plantedCount} planted, ${d.reads} read${d.reads===1?"":"s"} observed`
+    + (d.medianAlert!=null?`, median read→alert ${fmtDuration(d.medianAlert)}`:"")
+    + `. ${stale} need${stale===1?"s":""} re-validation (${d.valDist.unvalidated} unvalidated, ${d.valDist.red} stale).`;
+  const shapeRows = Object.entries(d.byShape).map(([k,n])=>
+    `<div class="bd"><div class="k">${esc(SHAPES[k]?.label||k)}</div><div class="val">${n}</div></div>`).join("");
+  const rows = d.bs.map(b=>{
+    const v = valState(b);
+    const vlabel = v.state==="unvalidated" ? "unvalidated" : v.date.toISOString().slice(0,10);
+    return `<tr>
+      <td>${esc(b.label)}</td>
+      <td>${esc(SHAPES[b.shape]?.label||b.shape)}</td>
+      <td>${esc(b.status)}</td>
+      <td class="num">${(b.variants||[]).length}</td>
+      <td class="num">${(b.plants||[]).length}</td>
+      <td class="num ${(b.hits||[]).length?'hit':''}">${(b.hits||[]).length}</td>
+      <td class="${v.state==='red'||v.state==='unvalidated'?'hit':''}">${esc(vlabel)}</td>
+    </tr>`;
+  }).join("");
+
+  $("#reportBody").innerHTML = `
+    <div class="report-head">
+      <h3>Context-bomb deterrence report</h3>
+      <div class="meta">Generated ${esc(when)} · range: ${esc(RANGE_LABEL[range]||"all time")} · all figures from this browser's saved data</div>
+    </div>
+    <div class="report-summary">
+      <div class="txt">${esc(summaryText)}</div>
+      <button class="btn small secondary no-print" data-copytext="${esc(summaryText)}">⧉ Copy</button>
+    </div>
+    <div class="stat-row">
+      <div class="stat s-total"><div class="n">${d.bs.length}</div><div class="l">Bombs created</div></div>
+      <div class="stat s-planted"><div class="n">${d.plantedCount}</div><div class="l">Planted</div></div>
+      <div class="stat s-triggered ${d.byStatus.triggered?'alert':''}"><div class="n">${d.reads}</div><div class="l">Reads observed</div></div>
+      <div class="stat s-hits ${stale?'alert':''}"><div class="n">${stale}</div><div class="l">Need re-validation</div></div>
+    </div>
+
+    <div class="report-h">Status breakdown</div>
+    <div class="breakdown">
+      <div class="bd"><div class="k">Created (not yet planted)</div><div class="val">${d.byStatus.created}</div></div>
+      <div class="bd"><div class="k">Planted</div><div class="val">${d.byStatus.planted}</div></div>
+      <div class="bd"><div class="k">Triggered (read)</div><div class="val">${d.byStatus.triggered}</div></div>
+      <div class="bd"><div class="k">Retired</div><div class="val">${d.byStatus.retired}</div></div>
+      <div class="bd"><div class="k">Decoy assets</div><div class="val">${d.assets}</div></div>
+      <div class="bd"><div class="k">Plant locations</div><div class="val">${d.plants}</div></div>
+      <div class="bd"><div class="k">Reads observed</div><div class="val">${d.reads}</div></div>
+      <div class="bd"><div class="k">Median read → alert</div><div class="val">${fmtDuration(d.medianAlert)}</div></div>
+    </div>
+
+    <div class="report-h">Validation freshness across the estate</div>
+    <div class="breakdown">
+      <div class="bd"><div class="k">Fresh (&lt;90 days)</div><div class="val">${d.valDist.fresh}</div></div>
+      <div class="bd"><div class="k">Ageing (90–180)</div><div class="val">${d.valDist.amber}</div></div>
+      <div class="bd"><div class="k">Stale (&gt;180 days)</div><div class="val">${d.valDist.red}</div></div>
+      <div class="bd"><div class="k">Unvalidated</div><div class="val">${d.valDist.unvalidated}</div></div>
+    </div>
+
+    <div class="report-h">By decoy shape</div>
+    <div class="breakdown">${shapeRows}</div>
+
+    <div class="report-h">Every bomb</div>
+    <div class="rtable-wrap"><table class="rtable">
+      <thead><tr>
+        <th>Label</th><th>Shape</th><th>Status</th>
+        <th style="text-align:right;">Assets</th><th style="text-align:right;">Plants</th>
+        <th style="text-align:right;">Reads</th><th>Validated</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+
+    <div class="report-note">Reads are recorded from AWS honeytoken alerts logged in this console. Outcome (whether the agent refused) is inferred from the absence of subsequent activity, not measured. Validation freshness goes amber at 90 days and red at 180 — a vendor loosening refusal behaviour degrades the control silently, so a stale bomb is an untested bomb.</div>
+  `;
+}
+function downloadReportCsv(){
+  const d = reportData(($("#reportRange") && $("#reportRange").value) || "all");
+  const head = ["bomb_id","label","shape","status","payload_source","assets","plants","reads","last_validated","validation_state","guardrail_dependency"];
+  const q = s => `"${String(s==null?"":s).replace(/"/g,'""')}"`;
+  const lines = [head.join(",")];
+  d.bs.forEach(b=>{
+    const v = valState(b);
+    lines.push([b.id, b.label, b.shape, b.status, b.payload_source,
+      (b.variants||[]).length, (b.plants||[]).length, (b.hits||[]).length,
+      v.state==="unvalidated"?"":v.date.toISOString().slice(0,10), v.state, b.guardrail_dependency||""
+    ].map(q).join(","));
+  });
+  const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `context-bomb-report-${todayStr()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href); toast("CSV downloaded");
+}
+
+/* ---------- export / import (whole store — both modes travel together) ---------- */
+function exportJson(){
+  const blob = new Blob([JSON.stringify(STATE,null,2)],{type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `canary-export-${todayStr()}.json`;
+  a.click(); URL.revokeObjectURL(a.href); toast("Exported (both modes)");
+}
+function importJson(file){
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const data = JSON.parse(r.result);
+      if(!data || !Array.isArray(data.canaries)) throw new Error("bad shape");
+      if(STATE.canaries.length && !confirm("Replace the current library (both modes) with the imported file?")) return;
+      data.canaries.forEach(c=>{ if(!c.intent) c.intent = "detect"; });
+      STATE = data; if(!STATE.company) STATE.company = {};
+      save(); refreshAll(); toast(`Imported ${data.canaries.length} artefacts`);
+    }catch(e){ toast("That file isn't a valid canary export"); }
+  };
+  r.readAsText(file);
+}
+
+/* =========================================================================
+   Tabs, wiring, refresh
+   ========================================================================= */
+function switchTab(name){
+  $$("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===name ? "true":"false"));
+  $$(".tabpanel").forEach(p=>p.classList.toggle("active", p.id==="tab-"+name));
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+function refreshAll(){
+  renderOverview();
+  fillBombSelect("#plantBomb"); refreshPlantVariants();
+  fillBombSelect("#hitBomb");
+  renderCli();
+  renderReport();
+  const mine = bombs();
+  const active = mine.filter(b=>b.status!=="retired").length;
+  const trig = mine.filter(b=>b.status==="triggered").length;
+  setCount("overview", mine.length);
+  setCount("plant", active);
+  setCount("detect", trig || "");
+}
+function setCount(tab,val){
+  const btn = $(`nav.tabs button[data-tab="${tab}"]`);
+  if(!btn) return;
+  let c = btn.querySelector(".tab-count");
+  if(val==="" || val===0){ if(c) c.remove(); return; }
+  if(!c){ c=document.createElement("span"); c.className="tab-count"; btn.appendChild(c); }
+  c.textContent = val;
+}
+
+let toastT=null;
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2600);
+}
+
+/* ---------- init ---------- */
+function init(){
+  const shapeSel = $("#genShape");
+  const setShapeHint = ()=> $("#shapeHint").textContent = SHAPES[shapeSel.value].hint;
+  shapeSel.addEventListener("change", setShapeHint); setShapeHint();
+
+  addValRow();  // one validation row to start
+  $("#btnAddVal").addEventListener("click", addValRow);
+  $("#plantDate").value = todayStr();
+
+  // theme
+  try{ const saved=localStorage.getItem("canary_theme"); if(saved) document.documentElement.setAttribute("data-theme",saved); }catch(e){}
+  $("#btnTheme").addEventListener("click", ()=>{
+    const cur = document.documentElement.getAttribute("data-theme");
+    const isDark = cur ? cur==="dark" : matchMedia("(prefers-color-scheme:dark)").matches;
+    const next = isDark?"light":"dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try{ localStorage.setItem("canary_theme", next); }catch(e){}
+  });
+
+  $$("nav.tabs button").forEach(b=> b.addEventListener("click", ()=>switchTab(b.dataset.tab)));
+
+  // generate
+  $("#btnGenerate").addEventListener("click", ()=>{ const d=buildBomb(); if(d){ draft=d; renderPreview(); } });
+  $("#btnRegen").addEventListener("click", ()=>{ const d=buildBomb(); if(d){ draft=d; renderPreview(); } });
+  $("#btnSaveBomb").addEventListener("click", ()=>{
+    if(!draft) return;
+    STATE.canaries.push(draft); save(); toast("Bomb saved to library");
+    draft=null;
+    $("#genPreviewPanel").style.display="none"; $("#btnRegen").style.display="none";
+    $("#genPayload").value=""; $("#genGuardrail").value=""; $("#genLabel").value=""; $("#genAssets").value="";
+    $("#genUnvalidated").checked=false;
+    $("#valRows").innerHTML=""; addValRow();
+    refreshAll(); switchTab("overview");
+  });
+
+  // plant
+  $("#plantBomb").addEventListener("change", refreshPlantVariants);
+  $("#plantVariant").addEventListener("change", renderPlantText);
+  $("#btnRecordPlant").addEventListener("click", recordPlant);
+
+  // tripwire hits
+  $("#btnParseHit").addEventListener("click", parseHitJson);
+  $("#btnRecordHit").addEventListener("click", recordHit);
+
+  // report
+  $("#btnPrintReport").addEventListener("click", ()=>{ renderReport(); window.print(); });
+  $("#btnCsvReport").addEventListener("click", downloadReportCsv);
+  $("#reportRange").addEventListener("change", renderReport);
+
+  // export / import
+  $("#btnExport").addEventListener("click", exportJson);
+  $("#btnImport").addEventListener("click", ()=>$("#fileImport").click());
+  $("#fileImport").addEventListener("change", e=>{ if(e.target.files[0]) importJson(e.target.files[0]); e.target.value=""; });
+
+  // delegated clicks
+  document.addEventListener("click", e=>{
+    const copyBtn = e.target.closest("[data-copy]");
+    if(copyBtn){ const el=$(copyBtn.dataset.copy); if(el){ navigator.clipboard.writeText(el.textContent).then(()=>toast("Copied to clipboard")); } return; }
+    const copyText = e.target.closest("[data-copytext]");
+    if(copyText){ navigator.clipboard.writeText(copyText.dataset.copytext).then(()=>toast("Copied")); return; }
+    const goto = e.target.closest("[data-goto]"); if(goto){ e.preventDefault(); switchTab(goto.dataset.goto); return; }
+    const act = e.target.closest("[data-act]");
+    if(act){ const id=act.dataset.id; if(act.dataset.act==="retire") retireBomb(id); if(act.dataset.act==="delete") deleteBomb(id); return; }
+  });
+
+  refreshAll();
+}
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
