@@ -148,6 +148,16 @@
       <strong>Read this first.</strong> No control here makes anyone "compliant". A canary is one <em>detective</em> control that helps <em>evidence</em> specific clauses. Frameworks are outcome-based and mandate no particular tool. Nothing on this page is certification or legal advice — confirm every mapping with your DPO, compliance function and legal counsel against the current text of each standard and your own risk assessment.
     </div>
 
+    <h2 class="section-h">Two modes, two control types</h2>
+    <p class="section-sub">The mapping tables below are written for tracer mode. Deter mode is a different kind of control and should be described differently.</p>
+    <div class="key" style="grid-template-columns:1fr 1fr;">
+      <div class="k support"><div class="lbl">Tracer (intent: detect)</div><p><b>Detective only.</b> A decoy fact that, if it resurfaces, evidences that a leak occurred. It does not prevent or respond — it makes an invisible leak visible. This is what every table on this page maps.</p></div>
+      <div class="k strong"><div class="lbl">Context bomb (intent: deter)</div><p><b>Detective plus responsive.</b> The read is a detection (same alert path); the payload also provokes the attacking agent to refuse and abandon, so the control acts on the incident in progress, not just after it. Closer to NIST AI RMF MANAGE's response mechanisms and ISO 27001 A.5.24–A.5.27's containment than tracer mode reaches.</p></div>
+    </div>
+    <div class="callout warn" style="margin-top:14px;">
+      <strong>Control-assurance limitation you must disclose.</strong> A context bomb's responsive effect is <em>owned by someone else's safety training</em>. Its strength depends on the attacking model having intact guardrails; a vendor loosening refusal behaviour in a point release degrades the control silently, and a model with guardrails stripped may be unaffected. Two consequences for assurance: (1) the control's efficacy is empirical and time-bounded — the console carries a validation stamp per bomb that ages to amber at 90 days and red at 180, and stale means untested; (2) you can evidence that the decoy was <em>read</em>, but not that the agent then refused — outcome is inferred, not measured. Present deter mode as a <em>responsive control with a vendor dependency</em>, never as a guaranteed preventive one.
+    </div>
+
     <h2 class="section-h">Claim-strength key</h2>
     <p class="section-sub">Read the badge before you use a row. It tells you how far the claim will carry.</p>
     <div class="key">
@@ -268,11 +278,12 @@
       <li><b>Copilot probing carries ToS risk.</b> Automated probing of Microsoft's free tier likely breaches its terms of service. A production programme needs sanctioned APIs, the client's own tenant, or documented legal review — a compliance tool with a ToS violation in its core loop is a bad look in due diligence.</li>
       <li><b>Internal authorisation is required.</b> Planting fabricated facts in internal systems needs written sign-off (risk of staff acting on false information, and of canaries being mistaken for data-quality incidents).</li>
       <li><b>False-confidence risk.</b> A negative probe proves the canary wasn't surfaced, not that no data leaked. Word reports as "no evidence of ingestion detected", never "no leakage occurred".</li>
+      <li><b>Deter mode leans on a vendor's guardrails.</b> A context bomb only deters a model whose safety training still refuses; efficacy is empirical, ages, and is never guaranteed. A quiet bomb (read, no follow-on) is inferred deterrence, not confirmed. Never present it as a preventive control that always works, and never plant it anywhere you do not own — it will also make your own legitimate agents refuse.</li>
       <li><b>Not relevant to</b> PCI DSS (cardholder-data flows are the wrong shape), SOX (financial-reporting controls), or Cyber Essentials (baseline technical controls only). Forcing these in undermines the credible claims.</li>
     </ul>
 
     <div class="callout info" style="margin-top:22px;">
-      <b>How to talk about it, safely.</b> "A detective control that helps us evidence monitoring, testing-effectiveness and breach-detection obligations across GDPR, the EU AI Act, ISO 42001/27001, NIST AI RMF, DORA and NIS2." Never "makes us compliant" or "required by …".
+      <b>How to talk about it, safely.</b> Tracer mode: "A detective control that helps us evidence monitoring, testing-effectiveness and breach-detection obligations across GDPR, the EU AI Act, ISO 42001/27001, NIST AI RMF, DORA and NIS2." Deter mode: "A detective-plus-responsive control that can cause an attacking agent to abandon, subject to a validated, time-bounded dependency on the model's own safety guardrails." Never "makes us compliant", "required by …", or "guaranteed to stop an attack".
     </div>
   </main>
 </div>

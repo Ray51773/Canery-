@@ -13,9 +13,31 @@ detection points that only fire if a fact escapes the building:
 It does not attack or exploit anything. It runs on company-owned
 infrastructure and contains only synthetic data.
 
-> This lives alongside the repo's other tool (the browser-based *AI Foundation
-> Security Checker* in `index.html` / `README.md`). This document covers the
-> Python canary system in `canary/`.
+## Two modes
+
+Every artefact has a required, **immutable `intent`**, set at generation and
+never editable:
+
+- **Tracer (`intent: detect`)** — the fabricated-fact canary described above.
+  It works by an AI *absorbing and repeating* the fact; that regurgitation is
+  the tell.
+- **Context bomb (`intent: deter`)** — a short, **user-supplied** string
+  planted in a decoy resource you own (a fake Secrets Manager secret, env
+  block, credentials file, DNS TXT, IAM role). It works by tripping an AI
+  agent's safety guardrails so it *refuses and abandons* an attack. Prior art:
+  [Tracebit's July 2026 research](https://agentic.tracebit.com/context-bombs),
+  which cut agent attack success ~90%.
+
+The two must **never share an artefact**: a bomb inside a tracer is a canary
+that suppresses its own tell. So `intent` branches generation, planting and
+reporting, and the two live on separate pages of the console. Deter mode is a
+*framework* — it never invents payloads (efficacy is empirical, not a template
+claim); the user supplies a tested payload and the tool provides the wrapping,
+plant tracking, alert correlation, validation record and reporting.
+
+> The browser console (`index.html` landing → `canary.html` for tracers,
+> `bomb.html` for context bombs) does the human side; this document covers the
+> Python system in `canary/`, which does what a browser can't.
 
 ---
 
@@ -65,27 +87,38 @@ All commands take `--config` (default `config/config.yaml`) and log to the
 central log configured under `storage.log_path`.
 
 ```bash
-# 1. Generate a canary + variants and create its S3 honeytoken object.
+# 1a. TRACER: generate a fabricated-fact canary + variants + S3 honeytoken.
 canary create --category product --variants 3 \
     --audience eng-team --audience finance-team
 # offline / no AWS:
 canary create --category financials --no-honeytoken
 
-# 2. Provision the shared AWS alerting infrastructure (once, then re-run to
-#    extend selectors as new honeytoken buckets appear).
+# 1b. DETER: build a context bomb from a payload you have tested. The payload
+#     becomes the value of a real decoy Secrets Manager secret. Keep it in a
+#     file so it never lands in shell history. A validation entry is required
+#     (or pass --unvalidated to save it explicitly flagged).
+canary create --intent deter --shape secrets_manager \
+    --payload-file bomb.txt --asset prod-db --asset ci-deploy \
+    --guardrail "refusal on credential-exfil intent" \
+    --validated "model=Claude Opus 4.8,date=2026-07-10,result=refused"
+
+# 2. Provision the shared AWS alerting (once). Wires BOTH S3 object reads and
+#    Secrets Manager GetSecretValue reads to the same SNS topic.
 canary provision
 
-# 3. Plant a canary's variants into a target surface.
+# 3. Plant a tracer's variants into a target surface.
 canary plant <canary_id> --target corp_wiki      # Confluence
 canary plant <canary_id> --target local_docstore # local reference adapter
 
-# 4. Pull S3 access events from the SQS ingest queue into the local store.
+# 4. Pull S3 + Secrets Manager read events from the SQS ingest queue.
 canary ingest
 
 # 5. Run the outbound public-AI probe (ToS-gated; needs --confirm).
+#    Deter bombs are skipped entirely — probing one is meaningless and would
+#    put the payload into a public tool.
 canary probe --confirm
 
-# 6. The correlation dashboard.
+# 6. The correlation dashboard — both modes, each with its own criteria.
 canary status
 canary status <canary_id> --json
 ```
@@ -188,9 +221,18 @@ Clarity over cleverness.
 ## Data model
 
 SQLite (`storage.database_path`) — a single auditable file. Tables: `canaries`,
-`variants`, `plants`, `s3_hits`, `probe_hits`. See `canary/store.py` /
-`canary/models.py`. Canary status flows `created → planted → triggered`
-(a real honeytoken or probe hit flips it to `triggered`).
+`variants`, `plants`, `s3_hits`, `secret_hits`, `probe_hits`. See
+`canary/store.py` / `canary/models.py`. Status flows
+`created → planted → triggered` (a real honeytoken read or probe hit flips it to
+`triggered`).
+
+`canaries` carries the immutable `intent` plus deter-only columns (`shape`,
+`payload_source`, `guardrail_dependency`, `last_validated_against`). Opening an
+older database migrates it in place (`ALTER TABLE ... ADD COLUMN`, defaulting
+`intent` to `detect`) — **existing stored canaries are never broken or lost**.
+For a deter artefact the `s3_*` columns hold the Secrets Manager resource (the
+secret name embeds the canary_id, exactly like an S3 key), so the same
+key→canary alert/ingest path is reused rather than duplicated.
 
 ---
 
@@ -219,10 +261,11 @@ browser automation of the target tools.)
 
 ## Roadmap (module slots designed in, not built for v1)
 
-Prompt-injection canary (invisible instruction in docs), honeytoken
-credentials (fake keys instrumented like the S3 object), and a DNS canary all
-slot into the existing adapter/registry pattern. Per-team/per-individual
-variant tracing is already implemented via variant `audience` + `marker`.
+Prompt-injection canary (invisible instruction in docs) and a DNS canary slot
+into the existing adapter/registry pattern. Honeytoken *credentials* instrumented
+like the S3 object now ship as deter-mode Secrets Manager decoys. Per-team/
+per-individual variant tracing is implemented via variant `audience` + `marker`
+(and per-asset for deter).
 
 ## Tests
 
@@ -231,6 +274,8 @@ pip install pytest
 pytest -q
 ```
 
-Covers the generator, fuzzy matcher, store, local injection adapter, and the
-Lambda alerter (SNS mocked). AWS provisioning and the Playwright probe are not
-exercised against live services in unit tests.
+Covers the generator, fuzzy matcher, store, local injection adapter, the Lambda
+alerter (SNS mocked), and deter mode (intent migration, the deter generator and
+shapes, secret-hit storage, and the Secrets Manager alert path). AWS
+provisioning and the Playwright probe are not exercised against live services
+in unit tests.

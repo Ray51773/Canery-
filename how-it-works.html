@@ -280,6 +280,18 @@
 
 <section>
   <div class="wrap prose">
+    <h2 class="section-h">A second mode: context bombs</h2>
+    <p class="sub">Everything above is <b>tracer</b> mode — a decoy built to be absorbed and repeated, so you can <em>detect</em> a leak. The console has a second, opposite mode: <b>deter</b>.</p>
+    <p>A <b>context bomb</b> is a short string you plant in a decoy resource you own — a fake AWS secret, an environment variable, a credentials file. It's designed to do the reverse of a tracer: instead of being quietly absorbed, it trips the safety guardrails of an AI agent that reads it during an attack, so the agent <em>refuses and abandons the run</em>. The prior art is <a href="https://agentic.tracebit.com/context-bombs" target="_blank" rel="noopener">Tracebit's July 2026 research</a>, which planted bombs in canary Secrets Manager values and cut agent attack success by roughly 90%.</p>
+    <div class="callout" style="margin-top:14px; background:var(--canary-bg); border-color:var(--canary-border);">
+      <b style="color:var(--triggered);">Why they can never share an artefact:</b> a tracer works only if the model happily absorbs the fact and repeats it — that regurgitation is the whole tell. A bomb works by making the model refuse. Put a bomb in a tracer and you've built a canary that suppresses its own signal. So every artefact carries an immutable <span class="mono">intent</span>, set when it's created and never editable, and the two modes live on separate pages.</p>
+    </div>
+    <p class="muted" style="margin-top:14px;">Two honest limits come with deter mode. First, it affects <em>any</em> agent that reads the decoy — including your own legitimate automation, which will refuse with no obvious reason, so plan for that. Second, the console can see that the bomb was <em>read</em> (via the same alert path as the bait file), but it cannot see whether the agent then refused — that outcome is inferred from the absence of follow-on activity, never measured. And because the control leans on a vendor's safety training, each bomb carries a validation stamp that goes stale: the console flags it amber at 90 days and red at 180.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap prose">
     <h2 class="section-h">Who does what</h2>
     <p class="sub">The friendly part runs in your browser; the plumbing is handled by the security team.</p>
     <div class="who">
@@ -287,7 +299,8 @@
         <h3>🖥️ Anyone — right here in the browser</h3>
         <div class="role">The Canary Console</div>
         <ul>
-          <li>Generate decoy facts and their variants</li>
+          <li>Generate decoy facts and their variants (tracer mode)</li>
+          <li>Wrap a tested payload into a decoy resource (deter mode)</li>
           <li>Copy ready-to-paste text to plant</li>
           <li>Paste an AI's answer to check if it leaked something</li>
           <li>See a dashboard of what's planted and what's tripped</li>
